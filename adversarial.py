@@ -1,16 +1,21 @@
 from __future__ import print_function
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
+from torch.autograd.gradcheck import zero_gradients
 from torchvision import datasets, transforms
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
+alpha = 0.01
+epsilons = [0.6]
+iter_num = 20
+edit_point_num = 1
 
-epsilons = [0.2, 0.4, 0.6, 0.8, 1]
 pretrained_model = "./lenet_mnist_model.pth"
-use_cuda=True
+use_cuda = True
+
 
 # LeNet Model definition
 class Net(nn.Module):
@@ -30,6 +35,7 @@ class Net(nn.Module):
         x = F.dropout(x, training=self.training)
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
+
 
 def main():
     # MNIST Test dataset and dataloader declaration
@@ -54,136 +60,154 @@ def main():
 
     accuracies = []
     examples = []
-    clean = []
+    cleans = []
+    total_grads = []
 
     # Run test for each epsilon
     for eps in epsilons:
-        acc, ex, c = test(model, device, test_loader, eps)
+        acc, ex, cl, grads = test(model, device, test_loader, eps)
         accuracies.append(acc)
         examples.append(ex)
-        clean.append(c)
+        cleans.append(cl)
+        total_grads.append(grads)
 
-    # Plot several examples of adversarial samples at each epsilon
-    cnt = 0
-    plt.figure(figsize=(8, 10))
-    for i in range(len(epsilons)):
-        for j in range(len(examples[i])):
-            cnt += 1
-            plt.subplot(len(epsilons), len(examples[0]), cnt)
-            plt.xticks([], [])
-            plt.yticks([], [])
-            if j == 0:
-                plt.ylabel("Eps: {}".format(epsilons[i]), fontsize=14)
-            orig, adv, ex = examples[i][j]
-            plt.title("{} -> {}".format(orig, adv))
-            plt.imshow(ex, cmap="gray")
-    plt.tight_layout()
-    plt.show()
+    for i in range(0, len(examples[0])):
+        orig, adv, ex = examples[0][i]
+        cl = cleans[0][i]
+        grad = total_grads[0][i]
+        visualize(cl, ex, grad, alpha, orig, adv)
 
-    cnt = 0
-    plt.figure(figsize=(8, 10))
-    for i in range(len(epsilons)):
-        for j in range(len(clean[i])):
-            cnt += 1
-            plt.subplot(len(epsilons), len(examples[0]), cnt)
-            plt.xticks([], [])
-            plt.yticks([], [])
-            if j == 0:
-                plt.ylabel("Eps: {}".format(epsilons[i]), fontsize=14)
-            orig, adv, ex = clean[i][j]
-            plt.title("{} -> {}".format(orig, adv))
-            plt.imshow(ex, cmap="gray")
-    plt.tight_layout()
-    plt.show()
 
-def test( model, device, test_loader, epsilon ):
+def test(model, device, test_loader, epsilon):
     # Accuracy counter
     correct = 0
     adv_examples = []
-    clean =[]
+    cl_examples = []
+    grads = []
 
+    total_grad = 0
     # Loop over all examples in test set
-    for data, target in test_loader:
-
+    for step, (data, target) in enumerate(test_loader):
+        if step > 1000: break
         # Send the data and label to the device
         data, target = data.to(device), target.to(device)
 
         # Set requires_grad attribute of tensor. Important for Attack
         data.requires_grad = True
+        target.requires_grad = False
 
         # Forward pass the data through the model
         output = model(data)
-        init_pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
+        init_pred = output.max(1, keepdim=True)[1]  # get the index of the max log-probability
 
         # If the initial prediction is wrong, dont bother attacking, just move on
         if init_pred.item() != target.item():
             continue
 
-        # Calculate the loss
-        loss = F.nll_loss(output, target)
+        topk_index = []
+        image_tensor = data.data.clone()
+        total_g = torch.zeros(data.size()).to(device)
 
-        # Zero all existing gradients
-        model.zero_grad()
+        for i in range(0, iter_num):
+            zero_gradients(data)
+            output = model(data)
+            loss = F.nll_loss(output, target)
+            loss.backward()
 
-        # Calculate gradients of model in backward pass
-        loss.backward()
+            data_grad = data.grad.data
+            if i == 0:
+                data_grad_r = data_grad.clone().reshape(-1)
+                data_grad_abs = torch.abs(data_grad_r)
+                topk = torch.topk(data_grad_abs, edit_point_num)
+                topk_index = topk[1]
 
-        # Collect datagrad
-        data_grad = data.grad.data
-        clean_d = data.clone()
-
-        # Call FGSM Attack
-        perturbed_data = fgsm_attack(data, epsilon, data_grad)
-
-        # Re-classify the perturbed image
-        output = model(perturbed_data)
+            # Call FGSM Attack
+            perturbed_data, g = fgsm_attack(data, alpha, data_grad, topk_index)
+            total_grad = perturbed_data - image_tensor
+            total_grad = torch.clamp(total_grad, -epsilon, epsilon)
+            adv = image_tensor + total_grad
+            total_g += total_grad
+            data.data = adv
 
         # Check for success
-        final_pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
+        final_pred = output.max(1, keepdim=True)[1]  # get the index of the max log-probability
         if final_pred.item() == target.item():
             correct += 1
             # Special case for saving 0 epsilon examples
             if (epsilon == 0) and (len(adv_examples) < 5):
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
-                adv_examples.append( (init_pred.item(), final_pred.item(), adv_ex) )
+                adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
         else:
             # Save some adv examples for visualization later
             if len(adv_examples) < 10:
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
-                clean_ex = clean_d.squeeze().detach().cpu().numpy()
-                adv_examples.append( (init_pred.item(), final_pred.item(), adv_ex) )
-                clean.append((init_pred.item(), final_pred.item(), clean_ex))
+                adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
+                clean = image_tensor.squeeze().detach().cpu().numpy()
+                cl_examples.append((clean))
+                grads.append((total_g))
 
     # Calculate final accuracy for this epsilon
-    final_acc = correct/float(len(test_loader))
-    print("Epsilon: {}\tTest Accuracy = {} / {} = {}".format(epsilon, correct, len(test_loader), final_acc))
+    final_acc = correct / float(len(test_loader))
+    print("Alpha: {}\tTest Accuracy = {} / {} = {}".format(alpha, correct, len(test_loader), final_acc))
 
     # Return the accuracy and an adversarial example
-    return final_acc, adv_examples, clean
+    return final_acc, adv_examples, cl_examples, grads
+
 
 # FGSM attack code
-def fgsm_attack(image, epsilon, data_grad):
+def fgsm_attack(image, alpha, data_grad, topk_index):
     # Collect the element-wise sign of the data gradient
     sign_data_grad = data_grad.sign()
 
-    data_grad = data_grad.reshape(-1)
-    data_grad_abs = torch.abs(data_grad)
-
-    topk = torch.topk(data_grad_abs, 10)
-    topk_index = topk[1]
-
     # Create the perturbed image by adjusting each pixel of the input image
-    perturbed_image = image
-
+    perturbed_image = image.clone()
+    device = torch.device("cuda" if (use_cuda and torch.cuda.is_available()) else "cpu")
+    g = torch.zeros(perturbed_image.size()).to(device)
     for i in range(0, len(topk_index)) :
         m = topk_index[i]/28
         n = topk_index[i]%28
-        perturbed_image[0][0][m][n] = perturbed_image[0][0][m][n] + epsilon*sign_data_grad[0][0][m][n]
+        g[0][0][m][n] = g[0][0][m][n] + alpha * sign_data_grad[0][0][m][n]
 
-    # Adding clipping to maintain [0,1] range
-    perturbed_image = torch.clamp(perturbed_image, 0, 1)
-    # Return the perturbed image
-    return perturbed_image
+    perturbed_image.data = perturbed_image.data + g.data
 
+    # perturbed_image = perturbed_image + alpha * sign_data_grad
+
+    return perturbed_image, g
+
+
+def visualize(x, x_adv, x_grad, epsilon, clean_pred, adv_pred):
+    x_grad = x_grad.detach().cpu().squeeze().numpy()
+
+    figure, ax = plt.subplots(1, 3, figsize=(18, 8))
+    ax[0].imshow(x, cmap="gray", vmin=0, vmax=1)
+    ax[0].set_title('Clean Example', fontsize=20)
+
+    ax[1].imshow(x_grad, cmap="gray", vmin=-1, vmax=1)
+    ax[1].set_title('Perturbation', fontsize=20)
+    ax[1].set_yticklabels([])
+    ax[1].set_xticklabels([])
+    ax[1].set_xticks([])
+    ax[1].set_yticks([])
+
+    ax[2].imshow(x_adv, cmap="gray", vmin=0, vmax=1)
+    ax[2].set_title('Adversarial Example', fontsize=20)
+
+    ax[0].axis('off')
+    ax[2].axis('off')
+
+    ax[0].text(1.1, 0.5, "+{}*".format(round(epsilon, 3)), size=15, ha="center",
+               transform=ax[0].transAxes)
+
+    ax[0].text(0.5, -0.13, "Prediction: {}\n".format(clean_pred), size=15, ha="center",
+               transform=ax[0].transAxes)
+
+    ax[1].text(1.1, 0.5, " = ", size=15, ha="center", transform=ax[1].transAxes)
+
+    ax[2].text(0.5, -0.13, "Prediction: {}\n".format(adv_pred), size=15, ha="center",
+               transform=ax[2].transAxes)
+
+    plt.show()
+
+    
 if __name__ == '__main__':
     main()
