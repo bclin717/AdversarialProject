@@ -6,16 +6,15 @@ import torch.nn.functional as F
 from torch.autograd.gradcheck import zero_gradients
 from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
-import numpy as np
 
-alpha = 0.01
-epsilons = [0.6]
-iter_num = 20
-edit_point_num = 1
+alpha = 0.05
+epsilons = [0.7]
+iter_num = 5
+edit_point_num = 3
+target_num = 5
 
 pretrained_model = "./lenet_mnist_model.pth"
 use_cuda = True
-
 
 # LeNet Model definition
 class Net(nn.Module):
@@ -36,7 +35,6 @@ class Net(nn.Module):
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
 
-
 def main():
     # MNIST Test dataset and dataloader declaration
     test_loader = torch.utils.data.DataLoader(
@@ -45,17 +43,12 @@ def main():
         ])),
         batch_size=1, shuffle=True)
 
-    # Define what device we are using
     print("CUDA Available: ", torch.cuda.is_available())
     device = torch.device("cuda" if (use_cuda and torch.cuda.is_available()) else "cpu")
 
-    # Initialize the network
     model = Net().to(device)
 
-    # Load the pretrained model
     model.load_state_dict(torch.load(pretrained_model, map_location='cpu'))
-
-    # Set the model in evaluation mode. In this case this is for the Dropout layers
     model.eval()
 
     accuracies = []
@@ -63,7 +56,6 @@ def main():
     cleans = []
     total_grads = []
 
-    # Run test for each epsilon
     for eps in epsilons:
         acc, ex, cl, grads = test(model, device, test_loader, eps)
         accuracies.append(acc)
@@ -85,10 +77,12 @@ def test(model, device, test_loader, epsilon):
     cl_examples = []
     grads = []
 
-    total_grad = 0
+    target_fake1 = torch.tensor([target_num]).to(device)
+    target_fake1.requires_grad = False
+
     # Loop over all examples in test set
     for step, (data, target) in enumerate(test_loader):
-        if step > 1000: break
+        if step > 10000: break
         # Send the data and label to the device
         data, target = data.to(device), target.to(device)
 
@@ -96,12 +90,16 @@ def test(model, device, test_loader, epsilon):
         data.requires_grad = True
         target.requires_grad = False
 
+        # print('Gounded Truth: ', target.item())
+
         # Forward pass the data through the model
         output = model(data)
         init_pred = output.max(1, keepdim=True)[1]  # get the index of the max log-probability
 
         # If the initial prediction is wrong, dont bother attacking, just move on
         if init_pred.item() != target.item():
+            continue
+        if target_fake1.item() == target.item():
             continue
 
         topk_index = []
@@ -111,10 +109,12 @@ def test(model, device, test_loader, epsilon):
         for i in range(0, iter_num):
             zero_gradients(data)
             output = model(data)
-            loss = F.nll_loss(output, target)
-            loss.backward()
+
+            loss = F.nll_loss(output, target_fake1)
+            loss.backward(retain_graph=False)
 
             data_grad = data.grad.data
+
             if i == 0:
                 data_grad_r = data_grad.clone().reshape(-1)
                 data_grad_abs = torch.abs(data_grad_r)
@@ -129,6 +129,7 @@ def test(model, device, test_loader, epsilon):
             total_g += total_grad
             data.data = adv
 
+
         # Check for success
         final_pred = output.max(1, keepdim=True)[1]  # get the index of the max log-probability
         if final_pred.item() == target.item():
@@ -137,7 +138,7 @@ def test(model, device, test_loader, epsilon):
             if (epsilon == 0) and (len(adv_examples) < 5):
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
-        else:
+        elif final_pred.item() == target_fake1.item():
             # Save some adv examples for visualization later
             if len(adv_examples) < 10:
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
@@ -150,7 +151,6 @@ def test(model, device, test_loader, epsilon):
     final_acc = correct / float(len(test_loader))
     print("Alpha: {}\tTest Accuracy = {} / {} = {}".format(alpha, correct, len(test_loader), final_acc))
 
-    # Return the accuracy and an adversarial example
     return final_acc, adv_examples, cl_examples, grads
 
 
@@ -166,11 +166,24 @@ def fgsm_attack(image, alpha, data_grad, topk_index):
     for i in range(0, len(topk_index)) :
         m = topk_index[i]/28
         n = topk_index[i]%28
-        g[0][0][m][n] = g[0][0][m][n] + alpha * sign_data_grad[0][0][m][n]
+        g[0][0][m][n] = g[0][0][m][n] - alpha * sign_data_grad[0][0][m][n]
 
     perturbed_image.data = perturbed_image.data + g.data
 
     # perturbed_image = perturbed_image + alpha * sign_data_grad
+
+    return perturbed_image, g
+
+
+def fgsm_attack2(image, alpha, data_grad, topk_index):
+    sign_data_grad = data_grad.sign()
+
+    # Create the perturbed image by adjusting each pixel of the input image
+    perturbed_image = image.clone()
+    device = torch.device("cuda" if (use_cuda and torch.cuda.is_available()) else "cpu")
+    g = torch.zeros(perturbed_image.size()).to(device)
+
+    perturbed_image = perturbed_image - alpha * sign_data_grad
 
     return perturbed_image, g
 
