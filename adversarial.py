@@ -1,39 +1,27 @@
 from __future__ import print_function
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from models import LeNet
 from torch.autograd.gradcheck import zero_gradients
 from torchvision import datasets, transforms
+from torchvision import models
 import matplotlib.pyplot as plt
+import time
+import numpy as np
 
-alpha = 0.05
+# 改batch_size看看
+
+alpha = 0.01
 epsilons = [0.7]
 iter_num = 5
 edit_point_num = 3
-target_num = 5
+target_num = 3
 
 pretrained_model = "./lenet_mnist_model.pth"
 use_cuda = True
 
-# LeNet Model definition
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
-        self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
-        self.conv2_drop = nn.Dropout2d()
-        self.fc1 = nn.Linear(320, 50)
-        self.fc2 = nn.Linear(50, 10)
 
-    def forward(self, x):
-        x = F.relu(F.max_pool2d(self.conv1(x), 2))
-        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
-        x = x.view(-1, 320)
-        x = F.relu(self.fc1(x))
-        x = F.dropout(x, training=self.training)
-        x = self.fc2(x)
-        return F.log_softmax(x, dim=1)
 
 def main():
     # MNIST Test dataset and dataloader declaration
@@ -43,13 +31,27 @@ def main():
         ])),
         batch_size=1, shuffle=True)
 
+    # Cifar10 Test dataset and dataloader declaration
+    # def data_tf(x):
+    #     x = x.resize((96, 96), 2)
+    #     x = np.array(x, dtype='float32') / 255
+    #     x = (x - 0.5) / 0.5
+    #     x = x.transpose((2, 0, 1))
+    #     x = torch.from_numpy(x)
+    #     return x
+    #
+    # dataset = datasets.CIFAR10('../data', train=False, transform=data_tf, download=True)
+    # test_loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True)
+
     print("CUDA Available: ", torch.cuda.is_available())
     device = torch.device("cuda" if (use_cuda and torch.cuda.is_available()) else "cpu")
 
-    model = Net().to(device)
-
+    model = LeNet().to(device)
     model.load_state_dict(torch.load(pretrained_model, map_location='cpu'))
     model.eval()
+
+    # model = models.inception_v3(pretrained=True).to(device)
+    # model.eval()
 
     accuracies = []
     examples = []
@@ -71,6 +73,7 @@ def main():
 
 
 def test(model, device, test_loader, epsilon):
+    tstart = time.time()
     # Accuracy counter
     correct = 0
     adv_examples = []
@@ -85,10 +88,10 @@ def test(model, device, test_loader, epsilon):
         if step > 10000: break
         # Send the data and label to the device
         data, target = data.to(device), target.to(device)
-
         # Set requires_grad attribute of tensor. Important for Attack
         data.requires_grad = True
         target.requires_grad = False
+
 
         # print('Gounded Truth: ', target.item())
 
@@ -122,7 +125,8 @@ def test(model, device, test_loader, epsilon):
                 topk_index = topk[1]
 
             # Call FGSM Attack
-            perturbed_data, g = fgsm_attack(data, alpha, data_grad, topk_index)
+            perturbed_data, g = fgsm_attack(data, alpha, data_grad, topk_index, i)
+
             total_grad = perturbed_data - image_tensor
             total_grad = torch.clamp(total_grad, -epsilon, epsilon)
             adv = image_tensor + total_grad
@@ -140,7 +144,7 @@ def test(model, device, test_loader, epsilon):
                 adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
         elif final_pred.item() == target_fake1.item():
             # Save some adv examples for visualization later
-            if len(adv_examples) < 10:
+            if len(adv_examples) < 100:
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
                 clean = image_tensor.squeeze().detach().cpu().numpy()
@@ -151,22 +155,25 @@ def test(model, device, test_loader, epsilon):
     final_acc = correct / float(len(test_loader))
     print("Alpha: {}\tTest Accuracy = {} / {} = {}".format(alpha, correct, len(test_loader), final_acc))
 
+    tend = time.time()
+    print(tend - tstart)
     return final_acc, adv_examples, cl_examples, grads
 
 
 # FGSM attack code
-def fgsm_attack(image, alpha, data_grad, topk_index):
-    # Collect the element-wise sign of the data gradient
+def fgsm_attack(image, alpha, data_grad, topk_index, t):
+    momentum = 0.9
     sign_data_grad = data_grad.sign()
 
-    # Create the perturbed image by adjusting each pixel of the input image
     perturbed_image = image.clone()
     device = torch.device("cuda" if (use_cuda and torch.cuda.is_available()) else "cpu")
     g = torch.zeros(perturbed_image.size()).to(device)
+    v = 0
     for i in range(0, len(topk_index)) :
         m = topk_index[i]/28
         n = topk_index[i]%28
-        g[0][0][m][n] = g[0][0][m][n] - alpha * sign_data_grad[0][0][m][n]
+        v = (momentum * v) + (alpha * sign_data_grad[0][0][m][n])
+        g[0][0][m][n] = g[0][0][m][n] - v
 
     perturbed_image.data = perturbed_image.data + g.data
 
