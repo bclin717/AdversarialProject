@@ -2,7 +2,7 @@ from __future__ import print_function
 
 import torch
 import torch.nn.functional as F
-from models import LeNet
+from models import LeNet, VGG
 from torch.autograd.gradcheck import zero_gradients
 from torchvision import datasets, transforms
 from torchvision import models
@@ -12,11 +12,17 @@ import numpy as np
 
 # 改batch_size看看
 
-alpha = 0.01
-epsilons = [0.7]
-iter_num = 5
+alpha = 0.03
+epsilons = [0.6]
+iter_num = 12
 edit_point_num = 3
-target_num = 3
+target_num = 0
+
+image_size = 32
+channel_size = 3
+
+# image_size = 28
+# channel_size = 1
 
 pretrained_model = "./lenet_mnist_model.pth"
 use_cuda = True
@@ -24,34 +30,32 @@ use_cuda = True
 
 
 def main():
-    # MNIST Test dataset and dataloader declaration
-    test_loader = torch.utils.data.DataLoader(
-        datasets.MNIST('../data', train=False, download=True, transform=transforms.Compose([
-            transforms.ToTensor(),
-        ])),
-        batch_size=1, shuffle=True)
-
-    # Cifar10 Test dataset and dataloader declaration
-    # def data_tf(x):
-    #     x = x.resize((96, 96), 2)
-    #     x = np.array(x, dtype='float32') / 255
-    #     x = (x - 0.5) / 0.5
-    #     x = x.transpose((2, 0, 1))
-    #     x = torch.from_numpy(x)
-    #     return x
-    #
-    # dataset = datasets.CIFAR10('../data', train=False, transform=data_tf, download=True)
-    # test_loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True)
-
+    # Set CUDA
     print("CUDA Available: ", torch.cuda.is_available())
     device = torch.device("cuda" if (use_cuda and torch.cuda.is_available()) else "cpu")
 
-    model = LeNet().to(device)
-    model.load_state_dict(torch.load(pretrained_model, map_location='cpu'))
+    # Dataloaders
+    # test_loader = torch.utils.data.DataLoader(
+    #     datasets.MNIST('../data', train=False, download=True, transform=transforms.Compose([
+    #         transforms.ToTensor(),
+    #     ])),
+    #     batch_size=1, shuffle=True)
+
+    test_loader = torch.utils.data.DataLoader(
+        datasets.CIFAR10('../data', train=False, download=True, transform=transforms.Compose([
+            transforms.ToTensor()
+        ])),
+        batch_size=1, shuffle=False)
+
+    # Model
+    # model = LeNet().to(device)
+    # model.load_state_dict(torch.load(pretrained_model, map_location='cpu'))
+    # model.eval()
+
+    model = torch.load(f'./VGG19.pth').to(device)
     model.eval()
 
-    # model = models.inception_v3(pretrained=True).to(device)
-    # model.eval()
+
 
     accuracies = []
     examples = []
@@ -87,6 +91,7 @@ def test(model, device, test_loader, epsilon):
     for step, (data, target) in enumerate(test_loader):
         if step > 10000: break
         # Send the data and label to the device
+
         data, target = data.to(device), target.to(device)
         # Set requires_grad attribute of tensor. Important for Attack
         data.requires_grad = True
@@ -170,10 +175,12 @@ def fgsm_attack(image, alpha, data_grad, topk_index, t):
     g = torch.zeros(perturbed_image.size()).to(device)
     v = 0
     for i in range(0, len(topk_index)) :
-        m = topk_index[i]/28
-        n = topk_index[i]%28
-        v = (momentum * v) + (alpha * sign_data_grad[0][0][m][n])
-        g[0][0][m][n] = g[0][0][m][n] - v
+        l = topk_index[i] / channel_size
+        c = l % channel_size
+        m = l / image_size
+        n = l % image_size
+        v = (momentum * v) + (alpha * sign_data_grad[0][c][m][n])
+        g[0][c][m][n] = g[0][c][m][n] - v
 
     perturbed_image.data = perturbed_image.data + g.data
 
@@ -199,17 +206,19 @@ def visualize(x, x_adv, x_grad, epsilon, clean_pred, adv_pred):
     x_grad = x_grad.detach().cpu().squeeze().numpy()
 
     figure, ax = plt.subplots(1, 3, figsize=(18, 8))
-    ax[0].imshow(x, cmap="gray", vmin=0, vmax=1)
+    x.reshape(image_size, image_size, channel_size)
+
+    ax[0].imshow((np.transpose(x, (1, 2, 0)) * 255).astype(np.uint8))
     ax[0].set_title('Clean Example', fontsize=20)
 
-    ax[1].imshow(x_grad, cmap="gray", vmin=-1, vmax=1)
+    ax[1].imshow((np.transpose(x_grad, (1, 2, 0)) * 255).astype(np.uint8))
     ax[1].set_title('Perturbation', fontsize=20)
     ax[1].set_yticklabels([])
     ax[1].set_xticklabels([])
     ax[1].set_xticks([])
     ax[1].set_yticks([])
 
-    ax[2].imshow(x_adv, cmap="gray", vmin=0, vmax=1)
+    ax[2].imshow((np.transpose(x_adv, (1, 2, 0)) * 255).astype(np.uint8))
     ax[2].set_title('Adversarial Example', fontsize=20)
 
     ax[0].axis('off')

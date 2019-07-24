@@ -19,9 +19,9 @@ parser.add_argument('--dataset', required=True, help='cifar-10/100 | fmnist/mnis
 parser.add_argument('--dataroot', required=True, help='path to dataset')
 parser.add_argument('--classes', type=int, required=True, help='classes of pictures')
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=4)
-parser.add_argument('--batchSize', type=int, default=192, help='inputs batch size')
+parser.add_argument('--batchSize', type=int, default=300, help='inputs batch size')
 parser.add_argument('--imageSize', type=int, default=32, help='the height / width of the inputs image to network')
-parser.add_argument('--niter', type=int, default=15, help='number of epochs to train for')
+parser.add_argument('--niter', type=int, default=25, help='number of epochs to train for')
 parser.add_argument('--lr', type=float, default=0.00025, help='learning rate, default=0.0001')
 parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
 parser.add_argument('--weight-decay', default=1e-4, type=float, metavar='W', help='weight decay (default: 1e-4)')
@@ -53,7 +53,7 @@ if torch.cuda.is_available() and not opt.cuda:
 transform = transforms.Compose([
     # transforms.Resize(opt.imageSize),
     # transforms.CenterCrop(opt.imageSize),
-    # transforms.RandomHorizontalFlip(),
+    transforms.RandomHorizontalFlip(),
     transforms.ToTensor()
 ])
 
@@ -216,7 +216,7 @@ def train():
 
     # load model
     # model = models.inception_v3(num_classes=10).cuda()
-    model = VGG('VGG16').cuda()
+    model = VGG('VGG19').cuda()
 
     model.cuda()
 
@@ -228,7 +228,7 @@ def train():
 
     for epoch in range(opt.niter):
         end = time.time()
-
+        torch.cuda.empty_cache()
         batch_time = AverageMeter('Time', ':6.3f')
         data_time = AverageMeter('Data', ':6.3f')
         losses = AverageMeter('Loss', ':6.3f')
@@ -252,6 +252,7 @@ def train():
             data, target = data.cuda(), target.cuda()
 
             # compute output
+
             output = model(data)
             loss = criterion(output, target)
 
@@ -275,16 +276,16 @@ def train():
 
         # Save the model checkpoint
 
-        if epoch >= 14:
-            torch.save(model, f"{opt.outf}/VGG16_epoch_{epoch + 1}.pth")
+        if epoch >= 23:
+            torch.save(model, f"{opt.outf}/VGG19_epoch_{epoch + 1}.pth")
     print(f"Model save to '{opt.outf}'.")
 
 
 def test():
     if torch.cuda.is_available():
-        model = torch.load(f'./VGG16.pth')
+        model = torch.load(f'./VGG19.pth')
     else:
-        model = torch.load(f'./VGG16.pth', map_location="cpu")
+        model = torch.load(f'./VGG19.pth', map_location="cpu")
     model.eval()
 
     batch_time = AverageMeter('Time', ':6.3f')
