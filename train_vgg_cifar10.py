@@ -2,17 +2,12 @@ import os
 import argparse
 import random
 import time
-
-import numpy as np
 from models import VGG
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 import torch.utils.data
 import torchvision.transforms as transforms
 import torchvision.datasets as dset
-from matplotlib.pyplot import imshow
-from torchvision import models
 
 parser = argparse.ArgumentParser(description='PyTorch AlexNet Training')
 parser.add_argument('--dataset', required=True, help='cifar-10/100 | fmnist/mnist | folder')
@@ -21,10 +16,10 @@ parser.add_argument('--classes', type=int, required=True, help='classes of pictu
 parser.add_argument('--workers', type=int, help='number of data loading workers', default=4)
 parser.add_argument('--batchSize', type=int, default=300, help='inputs batch size')
 parser.add_argument('--imageSize', type=int, default=32, help='the height / width of the inputs image to network')
-parser.add_argument('--niter', type=int, default=25, help='number of epochs to train for')
-parser.add_argument('--lr', type=float, default=0.00025, help='learning rate, default=0.0001')
+parser.add_argument('--niter', type=int, default=100, help='number of epochs to train for')
+parser.add_argument('--lr', type=float, default=0.0003, help='learning rate, default=0.0001')
 parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
-parser.add_argument('--weight-decay', default=1e-4, type=float, metavar='W', help='weight decay (default: 1e-4)')
+parser.add_argument('--weight-decay', default=2e-4, type=float, metavar='W', help='weight decay (default: 1e-4)')
 parser.add_argument('-p', '--print-freq', default=10, type=int, metavar='N', help='print frequency (default: 10)')
 parser.add_argument('--cuda', action='store_true', help='enables cuda')
 parser.add_argument('--ngpu', type=int, default=1, help='number of GPUs to use')
@@ -51,9 +46,6 @@ if torch.cuda.is_available() and not opt.cuda:
     print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
 transform = transforms.Compose([
-    # transforms.Resize(opt.imageSize),
-    # transforms.CenterCrop(opt.imageSize),
-    transforms.RandomHorizontalFlip(),
     transforms.ToTensor()
 ])
 
@@ -146,6 +138,18 @@ dataloader = torch.utils.data.DataLoader(
     num_workers=int(
         opt.workers))
 
+dataset2 = dset.CIFAR10(root=opt.dataroot,
+                        download=True,
+                        train=False,
+                        transform=transform)
+
+dataloader2 = torch.utils.data.DataLoader(
+    dataset2,
+    batch_size=opt.batchSize,
+    shuffle=True,
+    num_workers=int(
+        opt.workers))
+
 device = torch.device("cuda:0" if opt.cuda else "cpu")
 ngpu = int(opt.ngpu)
 
@@ -211,12 +215,13 @@ def accuracy(output, target, topk=(1,)):
         return res
 
 
+model = VGG('VGG19').cuda()
 def train():
     print(f"Train numbers:{len(dataset)}")
 
     # load model
     # model = models.inception_v3(num_classes=10).cuda()
-    model = VGG('VGG19').cuda()
+    # model = VGG('VGG19').cuda()
 
     model.cuda()
 
@@ -275,6 +280,7 @@ def train():
                 progress.print(i)
 
         # Save the model checkpoint
+        test()
 
         if epoch >= 23:
             torch.save(model, f"{opt.outf}/VGG19_epoch_{epoch + 1}.pth")
@@ -302,7 +308,7 @@ def test():
 
     with torch.no_grad():
         end = time.time()
-        for i, (data, target) in enumerate(dataloader):
+        for i, (data, target) in enumerate(dataloader2):
             data, target = data.cuda(), target.cuda()
 
             # compute output
