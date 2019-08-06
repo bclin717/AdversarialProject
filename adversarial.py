@@ -10,16 +10,15 @@ import time
 import numpy as np
 
 # Configuration
-alpha = 0.01
-epsilons = [0.7]
+alpha = 1
+epsilons = [1.02, 7]
 iter_num = 10
-edit_point_num = 5
+edit_point_num = 2
 target_num = 3
+momentum = 0.9
 
 attack_method = "ITER"
-# attack_method = "FGSM"
-
-sample_number = 10001
+sample_number = 10000
 
 # Set CUDA
 use_cuda = True
@@ -28,7 +27,7 @@ device = torch.device("cuda" if (use_cuda and torch.cuda.is_available()) else "c
 
 pretrained_model = "./lenet_mnist_model.pth"
 dataset = "CIFAR10"
-shuffle = True
+shuffle = False
 
 # Dataloader
 if dataset == 'MNIST':
@@ -117,8 +116,8 @@ def test(model, device, test_loader, epsilon):
             continue
 
         topk_index = []
+        topk_index2 = []
         image_tensor = data.data.clone()
-        total_g = torch.zeros(data.size()).to(device)
 
         for i in range(0, iter_num):
             zero_gradients(data)
@@ -137,12 +136,30 @@ def test(model, device, test_loader, epsilon):
                 topk_index = topk[1]
 
             # Attack
-            if attack_method == 'ITER':
-                adv, total_g = iter_attack(data, data_grad, image_tensor, topk_index, epsilon)
-            elif attack_method == 'FGSM':
-                adv, total_g = fgsm_attack()
+
+            adv = iter_attack_topK_sourceTargeting(data, data_grad, image_tensor, topk_index, epsilon)
+
+            # again
+            if (i != -1):
+                zero_gradients(data)
+                output = model(data)
+                loss = F.nll_loss(output, target)
+                loss.backward(retain_graph=False)
+
+                data_grad = data.grad.data
+
+                # Top K
+                if i == 0:
+                    data_grad_r = data_grad.clone().reshape(-1)
+                    data_grad_abs = torch.abs(data_grad_r)
+                    topk = torch.topk(data_grad_abs, edit_point_num)
+                    topk_index2 = topk[1]
+
+                # Attack
+                adv = fgsm_attack_topK(adv, data_grad, topk_index2)
             data.data = adv
 
+        total_g = adv - image_tensor
         # Check for success
         final_pred = output.max(1, keepdim=True)[1]  # get the index of the max log-probability
         if final_pred.item() == target.item():
@@ -181,8 +198,8 @@ def test(model, device, test_loader, epsilon):
 
 
 # FGSM attack code
-def iter_attack(image, data_grad, image_tensor, topk_index, epsilon):
-    momentum = 0.9
+def iter_attack_topK_sourceTargeting(image, data_grad, image_tensor, topk_index, epsilon):
+
     sign_data_grad = data_grad.sign()
 
     perturbed_image = image.clone()
@@ -201,15 +218,33 @@ def iter_attack(image, data_grad, image_tensor, topk_index, epsilon):
     total_grad = torch.clamp(total_grad, -epsilon, epsilon)
     adv = image_tensor + total_grad
 
-    return adv, total_grad
+    return adv
 
 
 def fgsm_attack(image, data_grad):
     sign_data_grad = data_grad.sign()
     perturbed_image = image.clone()
     g = torch.zeros(perturbed_image.size()).to(device)
-    perturbed_image = perturbed_image - alpha * sign_data_grad
-    return perturbed_image, g
+    perturbed_image = perturbed_image + alpha * sign_data_grad
+    return perturbed_image
+
+
+def fgsm_attack_topK(image, data_grad, topk_index):
+    sign_data_grad = data_grad.sign()
+    perturbed_image = image.clone()
+    g = torch.zeros(perturbed_image.size()).to(device)
+    v = 0
+    for i in range(0, len(topk_index)):
+        l = topk_index[i] / channel_size
+        c = l % channel_size
+        m = l / image_size
+        n = l % image_size
+        v = (momentum * v) + (alpha * sign_data_grad[0][c][m][n])
+        g[0][c][m][n] = g[0][c][m][n] + v
+
+    perturbed_image.data = perturbed_image.data + g.data
+    return perturbed_image
+
 
 
 def visualize(x, x_adv, x_grad, epsilon, clean_pred, adv_pred):
