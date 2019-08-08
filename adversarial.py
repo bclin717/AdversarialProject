@@ -10,15 +10,16 @@ import time
 import numpy as np
 
 # Configuration
-alpha = 1
-epsilons = [1.02, 7]
+alpha_LL = 2.5
+alpha_FGSM = 0.5
+epsilons = [8]
 iter_num = 10
 edit_point_num = 2
-target_num = 3
+target_nums = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 momentum = 0.9
 
 attack_method = "ITER"
-sample_number = 10000
+sample_number = 100
 
 # Set CUDA
 use_cuda = True
@@ -72,21 +73,22 @@ def main():
 
     # testing
     for eps in epsilons:
-        acc, ex, cl, grads = test(model, device, test_loader, eps)
-        accuracies.append(acc)
-        examples.append(ex)
-        cleans.append(cl)
-        total_grads.append(grads)
+        for target_num in target_nums:
+            acc, ex, cl, grads = test(model, device, test_loader, eps, target_num)
+            accuracies.append(acc)
+            examples.append(ex)
+            cleans.append(cl)
+            total_grads.append(grads)
 
     # visualize
     for i in range(0, len(examples[0])):
         orig, adv, ex = examples[0][i]
         cl = cleans[0][i]
         grad = total_grads[0][i]
-        visualize(cl, ex, grad, alpha, orig, adv)
+        visualize(cl, ex, grad, orig, adv)
 
 
-def test(model, device, test_loader, epsilon):
+def test(model, device, test_loader, epsilon, target_num):
     tstart = time.time()
     # Accuracy counter
     correct = 0
@@ -189,10 +191,12 @@ def test(model, device, test_loader, epsilon):
     tend = time.time()
 
     print("Number of samples: {}".format(sample_number))
-    print("Alpha: {}\tTest Accuracy = {} / {} = {:.2%}".format(alpha, correct, len(test_loader), final_acc))
+    print("Target: {}".format(labels[target_num]))
+    print("Test Accuracy = {} / {} = {:.2%}".format(correct, len(test_loader), final_acc))
     print("Incorrect = {} / {} = {:.2%}".format(incorrect, len(test_loader), final_incorrect))
     print("Successful Adv source-targeting = {} / {} = {:.2%}".format(adv_success, len(test_loader), final_adv_suc))
     print("Cost time : {:.2f} seconds".format(tend - tstart))
+    print("")
 
     return final_acc, adv_examples, cl_examples, grads
 
@@ -210,7 +214,7 @@ def iter_attack_topK_sourceTargeting(image, data_grad, image_tensor, topk_index,
         c = l % channel_size
         m = l / image_size
         n = l % image_size
-        v = (momentum * v) + (alpha * sign_data_grad[0][c][m][n])
+        v = (momentum * v) + (alpha_LL * sign_data_grad[0][c][m][n])
         g[0][c][m][n] = g[0][c][m][n] - v
 
     perturbed_image.data = perturbed_image.data + g.data
@@ -225,7 +229,7 @@ def fgsm_attack(image, data_grad):
     sign_data_grad = data_grad.sign()
     perturbed_image = image.clone()
     g = torch.zeros(perturbed_image.size()).to(device)
-    perturbed_image = perturbed_image + alpha * sign_data_grad
+    perturbed_image = perturbed_image + alpha_FGSM * sign_data_grad
     return perturbed_image
 
 
@@ -239,15 +243,14 @@ def fgsm_attack_topK(image, data_grad, topk_index):
         c = l % channel_size
         m = l / image_size
         n = l % image_size
-        v = (momentum * v) + (alpha * sign_data_grad[0][c][m][n])
+        v = (momentum * v) + (alpha_FGSM * sign_data_grad[0][c][m][n])
         g[0][c][m][n] = g[0][c][m][n] + v
 
     perturbed_image.data = perturbed_image.data + g.data
     return perturbed_image
 
 
-
-def visualize(x, x_adv, x_grad, epsilon, clean_pred, adv_pred):
+def visualize(x, x_adv, x_grad, clean_pred, adv_pred):
     x_grad = x_grad.detach().cpu().squeeze().numpy()
 
     figure, ax = plt.subplots(1, 3, figsize=(18, 8))
@@ -273,8 +276,6 @@ def visualize(x, x_adv, x_grad, epsilon, clean_pred, adv_pred):
     ax[0].axis('off')
     ax[2].axis('off')
 
-    ax[0].text(1.1, 0.5, "+{}*".format(round(epsilon, 3)), size=15, ha="center",
-               transform=ax[0].transAxes)
     ax[0].text(0.5, -0.13, "Prediction: {}\n".format(labels[clean_pred]), size=15, ha="center",
                transform=ax[0].transAxes)
 
