@@ -10,16 +10,18 @@ import time
 import numpy as np
 
 # Configuration
-alpha_LL = 2.5
-alpha_FGSM = 0.5
+alpha_LL = 1.6
+alpha_FGSM = 1.8
 epsilons = [8]
-iter_num = 10
-edit_point_num = 2
+iter_num_LL = 7
+iter_num_FGSM = 9
+edit_point_num_LL = 3
+edit_point_num_FGSM = 1
 target_nums = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 momentum = 0.9
 
 attack_method = "ITER"
-sample_number = 100
+sample_number = 10000
 
 # Set CUDA
 use_cuda = True
@@ -49,7 +51,7 @@ if dataset == 'MNIST':
     model = LeNet().to(device)
     model.load_state_dict(torch.load(pretrained_model, map_location='cpu'))
 elif dataset == 'CIFAR10':
-    model = torch.load(f'./VGG19.pth').to(device)
+    model = torch.load(f'./VGG19_1.pth').to(device)
 
 if dataset == 'MNIST':
     image_size = 28
@@ -121,10 +123,12 @@ def test(model, device, test_loader, epsilon, target_num):
         topk_index2 = []
         image_tensor = data.data.clone()
 
-        for i in range(0, iter_num):
+        for i in range(0, iter_num_LL):
             zero_gradients(data)
             output = model(data)
-
+            pred = output.max(1, keepdim=True)[1]
+            if pred == target_fake1:
+                break
             loss = F.nll_loss(output, target_fake1)
             loss.backward(retain_graph=False)
 
@@ -134,42 +138,40 @@ def test(model, device, test_loader, epsilon, target_num):
             if i == 0:
                 data_grad_r = data_grad.clone().reshape(-1)
                 data_grad_abs = torch.abs(data_grad_r)
-                topk = torch.topk(data_grad_abs, edit_point_num)
+                topk = torch.topk(data_grad_abs, edit_point_num_LL)
                 topk_index = topk[1]
 
-            # Attack
-
             adv = iter_attack_topK_sourceTargeting(data, data_grad, image_tensor, topk_index, epsilon)
+            data.data = adv
 
-            # again
-            if (i != -1):
-                zero_gradients(data)
-                output = model(data)
-                loss = F.nll_loss(output, target)
-                loss.backward(retain_graph=False)
+        for i in range(0, iter_num_FGSM):
+            zero_gradients(data)
+            output = model(data)
+            pred = output.max(1, keepdim=True)[1]
+            if pred == target_fake1:
+                break
+            loss = F.nll_loss(output, target)
+            loss.backward(retain_graph=False)
 
-                data_grad = data.grad.data
+            data_grad = data.grad.data
 
-                # Top K
-                if i == 0:
-                    data_grad_r = data_grad.clone().reshape(-1)
-                    data_grad_abs = torch.abs(data_grad_r)
-                    topk = torch.topk(data_grad_abs, edit_point_num)
-                    topk_index2 = topk[1]
+            # Top K
+            if i == 0:
+                data_grad_r = data_grad.clone().reshape(-1)
+                data_grad_abs = torch.abs(data_grad_r)
+                topk = torch.topk(data_grad_abs, edit_point_num_FGSM)
+                topk_index2 = topk[1]
 
-                # Attack
-                adv = fgsm_attack_topK(adv, data_grad, topk_index2)
+            # Attack
+            adv = fgsm_attack_topK(adv, data_grad, topk_index2)
             data.data = adv
 
         total_g = adv - image_tensor
         # Check for success
+        output = model(data)
         final_pred = output.max(1, keepdim=True)[1]  # get the index of the max log-probability
         if final_pred.item() == target.item():
             correct += 1
-            # Special case for saving 0 epsilon examples
-            if (epsilon == 0) and (len(adv_examples) < 5):
-                adv_ex = adv.squeeze().detach().cpu().numpy()
-                adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
         elif final_pred.item() == target_fake1.item():
             adv_success += 1
             # Save some adv examples for visualization later

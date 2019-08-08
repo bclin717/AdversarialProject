@@ -17,7 +17,7 @@ parser.add_argument('--workers', type=int, help='number of data loading workers'
 parser.add_argument('--batchSize', type=int, default=300, help='inputs batch size')
 parser.add_argument('--imageSize', type=int, default=32, help='the height / width of the inputs image to network')
 parser.add_argument('--niter', type=int, default=100, help='number of epochs to train for')
-parser.add_argument('--lr', type=float, default=0.0003, help='learning rate, default=0.0001')
+parser.add_argument('--lr', type=float, default=0.001, help='learning rate, default=0.0001')
 parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
 parser.add_argument('--weight-decay', default=2e-4, type=float, metavar='W', help='weight decay (default: 1e-4)')
 parser.add_argument('-p', '--print-freq', default=10, type=int, metavar='N', help='print frequency (default: 10)')
@@ -218,11 +218,6 @@ def accuracy(output, target, topk=(1,)):
 model = VGG('VGG19').cuda()
 def train():
     print(f"Train numbers:{len(dataset)}")
-
-    # load model
-    # model = models.inception_v3(num_classes=10).cuda()
-    # model = VGG('VGG19').cuda()
-
     model.cuda()
 
     # define optimizer
@@ -280,9 +275,7 @@ def train():
                 progress.print(i)
 
         # Save the model checkpoint
-        test()
-
-        if epoch >= 23:
+        if epoch >= 30:
             torch.save(model, f"{opt.outf}/VGG19_epoch_{epoch + 1}.pth")
     print(f"Model save to '{opt.outf}'.")
 
