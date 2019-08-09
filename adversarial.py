@@ -2,6 +2,8 @@ from __future__ import print_function
 
 import torch
 import torch.nn.functional as F
+import torchvision
+
 from models import LeNet, VGG
 from torch.autograd.gradcheck import zero_gradients
 from torchvision import datasets, transforms
@@ -31,6 +33,8 @@ device = torch.device("cuda" if (use_cuda and torch.cuda.is_available()) else "c
 pretrained_model = "./lenet_mnist_model.pth"
 dataset = "CIFAR10"
 shuffle = False
+
+save_pics = True
 
 # Dataloader
 if dataset == 'MNIST':
@@ -83,11 +87,11 @@ def main():
             total_grads.append(grads)
 
     # visualize
-    for i in range(0, len(examples[0])):
-        orig, adv, ex = examples[0][i]
-        cl = cleans[0][i]
-        grad = total_grads[0][i]
-        visualize(cl, ex, grad, orig, adv)
+    # for i in range(0, len(examples[0])):
+    #     orig, adv, ex = examples[0][i]
+    #     cl = cleans[0][i]
+    #     grad = total_grads[0][i]
+    #     visualize(cl, ex, grad, orig, adv)
 
 
 def test(model, device, test_loader, epsilon, target_num):
@@ -106,6 +110,7 @@ def test(model, device, test_loader, epsilon, target_num):
     # Loop over all examples in test set
     for step, (data, target) in enumerate(test_loader):
         if step > sample_number: break
+
         data, target = data.to(device), target.to(device)
         data.requires_grad = True
         target.requires_grad = False
@@ -184,6 +189,10 @@ def test(model, device, test_loader, epsilon, target_num):
 
         if final_pred.item() != target.item():
             incorrect += 1
+            if save_pics:
+                name = "./adv/adv_" + str(step) + "_" + labels[target.item()] + "To" + labels[
+                    target_fake1.item()] + ".png"
+                torchvision.utils.save_image(adv, filename=name)
 
     # Calculate final accuracy for this epsilon
     final_acc = correct / float(len(test_loader))
