@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 import torchvision
 
-from models import LeNet, VGG
+from models import LeNet
 from torch.autograd.gradcheck import zero_gradients
 from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
@@ -12,8 +12,8 @@ import time
 import numpy as np
 
 # Configuration
-alpha_LL = 1.6
-alpha_FGSM = 1.8
+alpha_LL = 1.8
+alpha_FGSM = 1.6
 epsilons = [8]
 iter_num_LL = 7
 iter_num_FGSM = 9
@@ -21,6 +21,7 @@ edit_point_num_LL = 3
 edit_point_num_FGSM = 1
 target_nums = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 momentum = 0.9
+count = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 attack_method = "ITER"
 sample_number = 10000
@@ -53,9 +54,9 @@ elif dataset == 'CIFAR10':
 # Model
 if dataset == 'MNIST':
     model = LeNet().to(device)
-    model.load_state_dict(torch.load(pretrained_model, map_location='cpu'))
+    model.load_state_dict(torch.load(pretrained_model))
 elif dataset == 'CIFAR10':
-    model = torch.load(f'./VGG19_1.pth').to(device)
+    model = torch.load(f'./VGG19_3.pth').to(device)
 
 if dataset == 'MNIST':
     image_size = 28
@@ -106,9 +107,10 @@ def test(model, device, test_loader, epsilon, target_num):
 
     target_fake1 = torch.tensor([target_num]).to(device)
     target_fake1.requires_grad = False
-
+    count = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     # Loop over all examples in test set
     for step, (data, target) in enumerate(test_loader):
+
         if step > sample_number: break
 
         data, target = data.to(device), target.to(device)
@@ -179,6 +181,10 @@ def test(model, device, test_loader, epsilon, target_num):
             correct += 1
         elif final_pred.item() == target_fake1.item():
             adv_success += 1
+            if save_pics:
+                name = "./adv/adv_" + str(step) + "_" + labels[target.item()] + "To" + labels[
+                    target_fake1.item()] + ".png"
+                torchvision.utils.save_image(adv, filename=name)
             # Save some adv examples for visualization later
             if len(adv_examples) < 100:
                 adv_ex = adv.squeeze().detach().cpu().numpy()
@@ -188,11 +194,8 @@ def test(model, device, test_loader, epsilon, target_num):
                 grads.append(total_g)
 
         if final_pred.item() != target.item():
+            count[final_pred] += 1
             incorrect += 1
-            if save_pics:
-                name = "./adv/adv_" + str(step) + "_" + labels[target.item()] + "To" + labels[
-                    target_fake1.item()] + ".png"
-                torchvision.utils.save_image(adv, filename=name)
 
     # Calculate final accuracy for this epsilon
     final_acc = correct / float(len(test_loader))
@@ -201,6 +204,7 @@ def test(model, device, test_loader, epsilon, target_num):
 
     tend = time.time()
 
+    print(count)
     print("Number of samples: {}".format(sample_number))
     print("Target: {}".format(labels[target_num]))
     print("Test Accuracy = {} / {} = {:.2%}".format(correct, len(test_loader), final_acc))
