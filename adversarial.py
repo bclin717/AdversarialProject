@@ -1,41 +1,48 @@
 from __future__ import print_function
 
-import torch
-import torch.nn.functional as F
 import torchvision
-
-from models import LeNet
 from torch.autograd.gradcheck import zero_gradients
 from torchvision import datasets, transforms
 import matplotlib.pyplot as plt
 import time
 import numpy as np
+import torch.backends.cudnn as cudnn
+from models import *
 
 # Configuration
+from utils import UnNormalize
+
 alpha_LL = 1.8
 alpha_FGSM = 1.6
 epsilons = [8]
-iter_num_LL = 7
-iter_num_FGSM = 9
-edit_point_num_LL = 3
-edit_point_num_FGSM = 1
+iter_num_LL = 10
+iter_num_FGSM = 10
+edit_point_num_LL = 20
+edit_point_num_FGSM = 20
 target_nums = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 momentum = 0.9
 count = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 attack_method = "ITER"
-sample_number = 10000
+sample_number = 100
 
 # Set CUDA
 use_cuda = True
 print("CUDA Available: ", torch.cuda.is_available())
-device = torch.device("cuda" if (use_cuda and torch.cuda.is_available()) else "cpu")
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-pretrained_model = "./lenet_mnist_model.pth"
+pretrained_model = "./trained_models/lenet_mnist_model.pth"
 dataset = "CIFAR10"
-shuffle = False
+shuffle = True
 
 save_pics = True
+
+unnorm = UnNormalize(mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010))
+# Transform
+transform_test = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+])
 
 # Dataloader
 if dataset == 'MNIST':
@@ -45,18 +52,22 @@ if dataset == 'MNIST':
         ])),
         batch_size=1, shuffle=shuffle)
 elif dataset == 'CIFAR10':
-    test_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10('../data', train=False, download=True, transform=transforms.Compose([
-            transforms.ToTensor()
-        ])),
-        batch_size=1, shuffle=shuffle)
+    test_set = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
+    test_loader = torch.utils.data.DataLoader(test_set, batch_size=1, shuffle=False, num_workers=4)
 
 # Model
 if dataset == 'MNIST':
     model = LeNet().to(device)
     model.load_state_dict(torch.load(pretrained_model))
 elif dataset == 'CIFAR10':
-    model = torch.load(f'./VGG19_3.pth').to(device)
+    # model = VGG('VGG19')
+    model = ResNet18()
+    model = model.to(device)
+    if device == 'cuda':
+        model = torch.nn.DataParallel(model)
+        cudnn.benchmark = True
+    checkpoint = torch.load('./trained_models/resnet18_1.pth')
+    model.load_state_dict(checkpoint['net'])
 
 if dataset == 'MNIST':
     image_size = 28
@@ -69,6 +80,7 @@ if dataset == 'MNIST':
     labels = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
 elif dataset == 'CIFAR10':
     labels = ['Airplane', 'Automobile', 'Bird', 'Cat', 'Deer', 'Dog', 'Frog', 'Horse', 'Ship', 'Truck']
+
 
 def main():
     model.eval()
@@ -184,7 +196,7 @@ def test(model, device, test_loader, epsilon, target_num):
             if save_pics:
                 name = "./adv/adv_" + str(step) + "_" + labels[target.item()] + "To" + labels[
                     target_fake1.item()] + ".png"
-                torchvision.utils.save_image(adv, filename=name)
+                torchvision.utils.save_image(unnorm(adv), filename=name)
             # Save some adv examples for visualization later
             if len(adv_examples) < 100:
                 adv_ex = adv.squeeze().detach().cpu().numpy()
@@ -218,13 +230,12 @@ def test(model, device, test_loader, epsilon, target_num):
 
 # FGSM attack code
 def iter_attack_topK_sourceTargeting(image, data_grad, image_tensor, topk_index, epsilon):
-
     sign_data_grad = data_grad.sign()
 
     perturbed_image = image.clone()
     g = torch.zeros(perturbed_image.size()).to(device)
     v = 0
-    for i in range(0, len(topk_index)) :
+    for i in range(0, len(topk_index)):
         l = topk_index[i] / channel_size
         c = l % channel_size
         m = l / image_size
@@ -300,6 +311,6 @@ def visualize(x, x_adv, x_grad, clean_pred, adv_pred):
 
     plt.show()
 
-    
+
 if __name__ == '__main__':
     main()
