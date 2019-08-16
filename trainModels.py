@@ -22,7 +22,7 @@ args = parser.parse_args()
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 best_acc = 0  # best test accuracy
 start_epoch = 0  # start from epoch 0 or last checkpoint epoch
-lrs = [0.1]
+lrs = [0.1, 0.01, 0.001]
 
 # Data
 print('==> Preparing data..')
@@ -48,7 +48,7 @@ classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship'
 
 # Model
 print('==> Building model..')
-net = VGG('VGG19')
+# net = VGG('VGG19')
 # net = ResNet18()
 # net = PreActResNet18()
 # net = GoogLeNet()
@@ -58,7 +58,7 @@ net = VGG('VGG19')
 # net = MobileNetV2()
 # net = DPN92()
 # net = ShuffleNetG2()
-# net = SENet18()
+net = SENet18()
 # net = ShuffleNetV2(1)
 # net = EfficientNetB0()
 net = net.to(device)
@@ -138,11 +138,11 @@ def test(epoch):
         best_acc = acc
 
 
-for i in range(0, len(lrs)):
-    optimizer = optim.SGD(net.parameters(), lr=lrs[i], momentum=0.9, weight_decay=5e-4)
-    for epoch in range(start_epoch, 50):
-        train(epoch)
-        test(epoch)
-    start_epoch = 0
+# for i in range(0, len(lrs)):
+#     optimizer = optim.SGD(net.parameters(), lr=lrs[i], momentum=0.9, weight_decay=5e-4)
+#     for epoch in range(start_epoch, 50):
+#         train(epoch)
+#         test(epoch)
+#     start_epoch = 0
 
-# test(0)
+test(0)

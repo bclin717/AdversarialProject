@@ -12,19 +12,19 @@ from models import *
 # Configuration
 from utils import UnNormalize
 
-alpha_LL = 1.8
-alpha_FGSM = 1.6
-epsilons = [8]
+alpha_LL = 4
+alpha_FGSM = 6
+epsilons = [10]
 iter_num_LL = 10
 iter_num_FGSM = 10
-edit_point_num_LL = 20
-edit_point_num_FGSM = 20
+edit_point_num_LL = 2
+edit_point_num_FGSM = 2
 target_nums = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 momentum = 0.9
 count = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 attack_method = "ITER"
-sample_number = 100
+sample_number = 10000
 
 # Set CUDA
 use_cuda = True
@@ -33,7 +33,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 pretrained_model = "./trained_models/lenet_mnist_model.pth"
 dataset = "CIFAR10"
-shuffle = True
+shuffle = False
 
 save_pics = True
 
@@ -53,7 +53,7 @@ if dataset == 'MNIST':
         batch_size=1, shuffle=shuffle)
 elif dataset == 'CIFAR10':
     test_set = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=1, shuffle=False, num_workers=4)
+    test_loader = torch.utils.data.DataLoader(test_set, batch_size=1, shuffle=shuffle, num_workers=4)
 
 # Model
 if dataset == 'MNIST':
@@ -61,12 +61,12 @@ if dataset == 'MNIST':
     model.load_state_dict(torch.load(pretrained_model))
 elif dataset == 'CIFAR10':
     # model = VGG('VGG19')
-    model = ResNet18()
+    model = VGG('VGG19')
     model = model.to(device)
     if device == 'cuda':
         model = torch.nn.DataParallel(model)
         cudnn.benchmark = True
-    checkpoint = torch.load('./trained_models/resnet18_1.pth')
+    checkpoint = torch.load('./trained_models/VGG19_Strong.pth')
     model.load_state_dict(checkpoint['net'])
 
 if dataset == 'MNIST':
@@ -113,6 +113,8 @@ def test(model, device, test_loader, epsilon, target_num):
     correct = 0
     adv_success = 0
     incorrect = 0
+    org_incorrect = 0
+
     adv_examples = []
     cl_examples = []
     grads = []
@@ -134,6 +136,7 @@ def test(model, device, test_loader, epsilon, target_num):
         init_pred = output.max(1, keepdim=True)[1]
 
         if init_pred.item() != target.item():
+            org_incorrect += 1
             continue
         elif target_fake1.item() == target.item():
             continue
@@ -197,6 +200,7 @@ def test(model, device, test_loader, epsilon, target_num):
                 name = "./adv/adv_" + str(step) + "_" + labels[target.item()] + "To" + labels[
                     target_fake1.item()] + ".png"
                 torchvision.utils.save_image(unnorm(adv), filename=name)
+                # torchvision.utils.save_image(adv, filename=name)
             # Save some adv examples for visualization later
             if len(adv_examples) < 100:
                 adv_ex = adv.squeeze().detach().cpu().numpy()
@@ -210,18 +214,19 @@ def test(model, device, test_loader, epsilon, target_num):
             incorrect += 1
 
     # Calculate final accuracy for this epsilon
-    final_acc = correct / float(len(test_loader))
-    final_incorrect = incorrect / float(len(test_loader))
-    final_adv_suc = adv_success / float(len(test_loader))
+    final_acc = correct / float(sample_number)
+    final_incorrect = incorrect / float(sample_number - org_incorrect)
+    final_adv_suc = adv_success / float(sample_number - org_incorrect)
 
     tend = time.time()
 
     print(count)
     print("Number of samples: {}".format(sample_number))
     print("Target: {}".format(labels[target_num]))
-    print("Test Accuracy = {} / {} = {:.2%}".format(correct, len(test_loader), final_acc))
-    print("Incorrect = {} / {} = {:.2%}".format(incorrect, len(test_loader), final_incorrect))
-    print("Successful Adv source-targeting = {} / {} = {:.2%}".format(adv_success, len(test_loader), final_adv_suc))
+    print("Test Accuracy = {} / {} = {:.2%}".format(correct, sample_number, final_acc))
+    print("Incorrect = {} / {} = {:.2%}".format(incorrect, sample_number - org_incorrect, final_incorrect))
+    print("Successful Adv source-targeting = {} / {} = {:.2%}".format(adv_success, sample_number - org_incorrect,
+                                                                      final_adv_suc))
     print("Cost time : {:.2f} seconds".format(tend - tstart))
     print("")
 
