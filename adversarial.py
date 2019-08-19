@@ -23,8 +23,9 @@ target_nums = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 momentum = 0.9
 count = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
+batch_size = 100
 attack_method = "ITER"
-sample_number = 10000
+
 
 # Set CUDA
 use_cuda = True
@@ -50,23 +51,22 @@ if dataset == 'MNIST':
         datasets.MNIST('../data', train=False, download=True, transform=transforms.Compose([
             transforms.ToTensor(),
         ])),
-        batch_size=1, shuffle=shuffle)
+        batch_size=batch_size, shuffle=shuffle)
 elif dataset == 'CIFAR10':
     test_set = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=1, shuffle=shuffle, num_workers=4)
+    test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=shuffle, num_workers=8)
 
 # Model
 if dataset == 'MNIST':
     model = LeNet().to(device)
     model.load_state_dict(torch.load(pretrained_model))
 elif dataset == 'CIFAR10':
-    # model = VGG('VGG19')
-    model = ResNeXt29_2x64d()
+    model = VGG('VGG19')
     model = model.to(device)
     if device == 'cuda':
         model = torch.nn.DataParallel(model)
         cudnn.benchmark = True
-    checkpoint = torch.load('./trained_models/ResNeXt29_2x64d_Strong.pth')
+    checkpoint = torch.load('./trained_models/VGG19_Weak.pth')
     model.load_state_dict(checkpoint['net'])
 
 if dataset == 'MNIST':
@@ -99,13 +99,6 @@ def main():
             cleans.append(cl)
             total_grads.append(grads)
 
-    # visualize
-    # for i in range(0, len(examples[0])):
-    #     orig, adv, ex = examples[0][i]
-    #     cl = cleans[0][i]
-    #     grad = total_grads[0][i]
-    #     visualize(cl, ex, grad, orig, adv)
-
 
 def test(model, device, test_loader, epsilon, target_num):
     tstart = time.time()
@@ -123,109 +116,110 @@ def test(model, device, test_loader, epsilon, target_num):
     target_fake1.requires_grad = False
     count = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     # Loop over all examples in test set
-    for step, (data, target) in enumerate(test_loader):
+    for step, (dataAll, targetAll) in enumerate(test_loader):
+        for batch in range(0, batch_size):
+            print(batch_size)
+            data, target = dataAll[batch], targetAll[batch]
+            data, target = data.unsqueeze(0).to(device), target.unsqueeze(0).to(device)
+            data.requires_grad = True
+            target.requires_grad = False
 
-        if step > sample_number: break
-
-        data, target = data.to(device), target.to(device)
-        data.requires_grad = True
-        target.requires_grad = False
-
-        # Forward pass the data through the model
-        output = model(data)
-        init_pred = output.max(1, keepdim=True)[1]
-
-        if init_pred.item() != target.item():
-            org_incorrect += 1
-            continue
-        elif target_fake1.item() == target.item():
-            continue
-
-        topk_index = []
-        topk_index2 = []
-        image_tensor = data.data.clone()
-
-        for i in range(0, iter_num_LL):
-            zero_gradients(data)
+            # Forward pass the data through the model
             output = model(data)
-            pred = output.max(1, keepdim=True)[1]
-            if pred == target_fake1:
-                break
-            loss = F.nll_loss(output, target_fake1)
-            loss.backward(retain_graph=False)
+            init_pred = output.max(1, keepdim=True)[1]
 
-            data_grad = data.grad.data
+            if init_pred.item() != target.item():
+                org_incorrect += 1
+                continue
+            elif target_fake1.item() == target.item():
+                continue
 
-            # Top K
-            if i == 0:
-                data_grad_r = data_grad.clone().reshape(-1)
-                data_grad_abs = torch.abs(data_grad_r)
-                topk = torch.topk(data_grad_abs, edit_point_num_LL)
-                topk_index = topk[1]
+            topk_index = []
+            topk_index2 = []
+            image_tensor = data.data.clone()
 
-            adv = iter_attack_topK_sourceTargeting(data, data_grad, image_tensor, topk_index, epsilon)
-            data.data = adv
+            for i in range(0, iter_num_LL):
+                zero_gradients(data)
+                output = model(data)
+                pred = output.max(1, keepdim=True)[1]
+                if pred == target_fake1:
+                    break
+                loss = F.nll_loss(output, target_fake1)
+                loss.backward(retain_graph=False)
 
-        for i in range(0, iter_num_FGSM):
-            zero_gradients(data)
+                data_grad = data.grad.data
+
+                # Top K
+                if i == 0:
+                    data_grad_r = data_grad.clone().reshape(-1)
+                    data_grad_abs = torch.abs(data_grad_r)
+                    topk = torch.topk(data_grad_abs, edit_point_num_LL)
+                    topk_index = topk[1]
+
+                adv = iter_attack_topK_sourceTargeting(data, data_grad, image_tensor, topk_index, epsilon)
+                data.data = adv
+
+            for i in range(0, iter_num_FGSM):
+                zero_gradients(data)
+                output = model(data)
+                pred = output.max(1, keepdim=True)[1]
+                if pred == target_fake1:
+                    break
+                loss = F.nll_loss(output, target)
+                loss.backward(retain_graph=False)
+
+                data_grad = data.grad.data
+
+                # Top K
+                if i == 0:
+                    data_grad_r = data_grad.clone().reshape(-1)
+                    data_grad_abs = torch.abs(data_grad_r)
+                    topk = torch.topk(data_grad_abs, edit_point_num_FGSM)
+                    topk_index2 = topk[1]
+
+                # Attack
+                adv = fgsm_attack_topK(adv, data_grad, topk_index2)
+                data.data = adv
+
+            total_g = adv - image_tensor
+
+            # Check for success
             output = model(data)
-            pred = output.max(1, keepdim=True)[1]
-            if pred == target_fake1:
-                break
-            loss = F.nll_loss(output, target)
-            loss.backward(retain_graph=False)
+            final_pred = output.max(1, keepdim=True)[1]  # get the index of the max log-probability
+            if final_pred.item() == target.item():
+                correct += 1
+            elif final_pred.item() == target_fake1.item():
+                adv_success += 1
+                if save_pics:
+                    name = "./adv/adv_" + "batch" + str(step) + "_" + str(batch) + "_" + labels[target.item()] + "To" + \
+                           labels[target_fake1.item()] + ".png"
+                    torchvision.utils.save_image(unnorm(adv), filename=name)
+                # Save some adv examples for visualization later
+                if len(adv_examples) < 100:
+                    adv_ex = adv.squeeze().detach().cpu().numpy()
+                    adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
+                    clean = image_tensor.squeeze().detach().cpu().numpy()
+                    cl_examples.append(clean)
+                    grads.append(total_g)
 
-            data_grad = data.grad.data
-
-            # Top K
-            if i == 0:
-                data_grad_r = data_grad.clone().reshape(-1)
-                data_grad_abs = torch.abs(data_grad_r)
-                topk = torch.topk(data_grad_abs, edit_point_num_FGSM)
-                topk_index2 = topk[1]
-
-            # Attack
-            adv = fgsm_attack_topK(adv, data_grad, topk_index2)
-            data.data = adv
-
-        total_g = adv - image_tensor
-        # Check for success
-        output = model(data)
-        final_pred = output.max(1, keepdim=True)[1]  # get the index of the max log-probability
-        if final_pred.item() == target.item():
-            correct += 1
-        elif final_pred.item() == target_fake1.item():
-            adv_success += 1
-            if save_pics:
-                name = "./adv/adv_" + str(step) + "_" + labels[target.item()] + "To" + labels[
-                    target_fake1.item()] + ".png"
-                torchvision.utils.save_image(unnorm(adv), filename=name)
-                # torchvision.utils.save_image(adv, filename=name)
-            # Save some adv examples for visualization later
-            if len(adv_examples) < 100:
-                adv_ex = adv.squeeze().detach().cpu().numpy()
-                adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
-                clean = image_tensor.squeeze().detach().cpu().numpy()
-                cl_examples.append(clean)
-                grads.append(total_g)
-
-        if final_pred.item() != target.item():
-            count[final_pred] += 1
-            incorrect += 1
+            if final_pred.item() != target.item():
+                count[final_pred] += 1
+                incorrect += 1
 
     # Calculate final accuracy for this epsilon
-    final_acc = correct / float(sample_number)
-    final_incorrect = incorrect / float(sample_number - org_incorrect)
-    final_adv_suc = adv_success / float(sample_number - org_incorrect)
+    allnum = step * batch_size
+    final_acc = correct / float(allnum)
+    final_incorrect = incorrect / float(allnum - org_incorrect)
+    final_adv_suc = adv_success / float(allnum - org_incorrect)
 
     tend = time.time()
 
     print(count)
-    print("Number of samples: {}".format(sample_number))
+    print("Number of samples: {}".format(allnum))
     print("Target: {}".format(labels[target_num]))
-    print("Test Accuracy = {} / {} = {:.2%}".format(correct, sample_number, final_acc))
-    print("Incorrect = {} / {} = {:.2%}".format(incorrect, sample_number - org_incorrect, final_incorrect))
-    print("Successful Adv source-targeting = {} / {} = {:.2%}".format(adv_success, sample_number - org_incorrect,
+    print("Test Accuracy = {} / {} = {:.2%}".format(correct, allnum, final_acc))
+    print("Incorrect = {} / {} = {:.2%}".format(incorrect, allnum - org_incorrect, final_incorrect))
+    print("Successful Adv source-targeting = {} / {} = {:.2%}".format(adv_success, allnum - org_incorrect,
                                                                       final_adv_suc))
     print("Cost time : {:.2f} seconds".format(tend - tstart))
     print("")
@@ -279,43 +273,6 @@ def fgsm_attack_topK(image, data_grad, topk_index):
 
     perturbed_image.data = perturbed_image.data + g.data
     return perturbed_image
-
-
-def visualize(x, x_adv, x_grad, clean_pred, adv_pred):
-    x_grad = x_grad.detach().cpu().squeeze().numpy()
-
-    figure, ax = plt.subplots(1, 3, figsize=(18, 8))
-    x.reshape(image_size, image_size, channel_size)
-
-    if dataset == 'MNIST':
-        ax[0].imshow(x, cmap="gray", vmin=0, vmax=1)
-        ax[1].imshow(x_grad, cmap="gray", vmin=-1, vmax=1)
-        ax[2].imshow(x_adv, cmap="gray", vmin=0, vmax=1)
-    elif dataset == 'CIFAR10':
-        ax[0].imshow((np.transpose(x, (1, 2, 0)) * 255).astype(np.uint8))
-        ax[1].imshow((np.transpose(x_grad, (1, 2, 0)) * 255).astype(np.uint8), vmin=-255, vmax=255)
-        ax[2].imshow((np.transpose(x_adv, (1, 2, 0)) * 255).astype(np.uint8))
-
-    ax[0].set_title('Clean Example', fontsize=20)
-    ax[1].set_title('Perturbation', fontsize=20)
-    ax[1].set_yticklabels([])
-    ax[1].set_xticklabels([])
-    ax[1].set_xticks([])
-    ax[1].set_yticks([])
-
-    ax[2].set_title('Adversarial Example', fontsize=20)
-    ax[0].axis('off')
-    ax[2].axis('off')
-
-    ax[0].text(0.5, -0.13, "Prediction: {}\n".format(labels[clean_pred]), size=15, ha="center",
-               transform=ax[0].transAxes)
-
-    ax[1].text(1.1, 0.5, " = ", size=15, ha="center", transform=ax[1].transAxes)
-    ax[2].text(0.5, -0.13, "Prediction: {}\n".format(labels[adv_pred]), size=15, ha="center",
-               transform=ax[2].transAxes)
-
-    plt.show()
-
 
 if __name__ == '__main__':
     main()
