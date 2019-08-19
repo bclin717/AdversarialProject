@@ -3,7 +3,6 @@ from __future__ import print_function
 import torchvision
 from torch.autograd.gradcheck import zero_gradients
 from torchvision import datasets, transforms
-import matplotlib.pyplot as plt
 import time
 import numpy as np
 import torch.backends.cudnn as cudnn
@@ -23,7 +22,7 @@ target_nums = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 momentum = 0.9
 count = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
-batch_size = 100
+batch_size = 1
 attack_method = "ITER"
 
 
@@ -206,7 +205,7 @@ def test(model, device, test_loader, epsilon, target_num):
                 incorrect += 1
 
     # Calculate final accuracy for this epsilon
-    allnum = step * (batch_size + 1)
+    allnum = (step + 1) * (batch + 1)
     final_acc = correct / float(allnum)
     final_incorrect = incorrect / float(allnum - org_incorrect)
     final_adv_suc = adv_success / float(allnum - org_incorrect)
