@@ -60,7 +60,7 @@ print('==> Building model..')
 # net = SENet18()
 # net = ShuffleNetV2(1)
 # net = EfficientNetB0()
-net = EfficientNet.from_pretrained('efficientnet-b0', num_classes=10)
+net = EfficientNet.from_pretrained('efficientnet-b0', num_classes=10, dropout_rate=0.5)
 net = net.to(device)
 if device == 'cuda':
     net = torch.nn.DataParallel(net)
