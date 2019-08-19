@@ -187,8 +187,9 @@ class EfficientNet(nn.Module):
         return EfficientNet(blocks_args, global_params)
 
     @classmethod
-    def from_pretrained(cls, model_name, num_classes=10):
-        model = EfficientNet.from_name(model_name, override_params={'num_classes': num_classes})
+    def from_pretrained(cls, model_name, num_classes=10, dropout_rate=0.3):
+        model = EfficientNet.from_name(model_name,
+                                       override_params={'num_classes': num_classes, 'dropout_rate': dropout_rate})
         load_pretrained_weights(model, model_name, load_fc=(num_classes == 1000))
         return model
 
