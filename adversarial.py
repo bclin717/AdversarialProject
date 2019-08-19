@@ -61,12 +61,12 @@ if dataset == 'MNIST':
     model = LeNet().to(device)
     model.load_state_dict(torch.load(pretrained_model))
 elif dataset == 'CIFAR10':
-    model = VGG('VGG19')
+    model = ResNeXt29_2x64d()
     model = model.to(device)
     if device == 'cuda':
         model = torch.nn.DataParallel(model)
         cudnn.benchmark = True
-    checkpoint = torch.load('./trained_models/VGG19_Weak.pth')
+    checkpoint = torch.load('./trained_models/ResNeXt29_2x64d_Weak.pth')
     model.load_state_dict(checkpoint['net'])
 
 if dataset == 'MNIST':
@@ -118,7 +118,6 @@ def test(model, device, test_loader, epsilon, target_num):
     # Loop over all examples in test set
     for step, (dataAll, targetAll) in enumerate(test_loader):
         for batch in range(0, batch_size):
-            print(batch_size)
             data, target = dataAll[batch], targetAll[batch]
             data, target = data.unsqueeze(0).to(device), target.unsqueeze(0).to(device)
             data.requires_grad = True
@@ -207,7 +206,7 @@ def test(model, device, test_loader, epsilon, target_num):
                 incorrect += 1
 
     # Calculate final accuracy for this epsilon
-    allnum = step * batch_size
+    allnum = step * (batch_size + 1)
     final_acc = correct / float(allnum)
     final_incorrect = incorrect / float(allnum - org_incorrect)
     final_adv_suc = adv_success / float(allnum - org_incorrect)
