@@ -2,7 +2,6 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 
 import torchvision
@@ -58,9 +57,10 @@ print('==> Building model..')
 # net = MobileNetV2()
 # net = DPN92()
 # net = ShuffleNetG2()
-net = SENet18()
+# net = SENet18()
 # net = ShuffleNetV2(1)
 # net = EfficientNetB0()
+net = EfficientNet.from_pretrained('efficientnet-b0', num_classes=10)
 net = net.to(device)
 if device == 'cuda':
     net = torch.nn.DataParallel(net)
@@ -138,11 +138,11 @@ def test(epoch):
         best_acc = acc
 
 
-# for i in range(0, len(lrs)):
-#     optimizer = optim.SGD(net.parameters(), lr=lrs[i], momentum=0.9, weight_decay=5e-4)
-#     for epoch in range(start_epoch, 50):
-#         train(epoch)
-#         test(epoch)
-#     start_epoch = 0
+for i in range(0, len(lrs)):
+    optimizer = optim.SGD(net.parameters(), lr=lrs[i], momentum=0.9, weight_decay=5e-4)
+    for epoch in range(start_epoch, 50):
+        train(epoch)
+        test(epoch)
+    start_epoch = 0
 
-test(0)
+# test(0)

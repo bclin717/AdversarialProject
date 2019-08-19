@@ -61,12 +61,12 @@ if dataset == 'MNIST':
     model.load_state_dict(torch.load(pretrained_model))
 elif dataset == 'CIFAR10':
     # model = VGG('VGG19')
-    model = VGG('VGG19')
+    model = ResNeXt29_2x64d()
     model = model.to(device)
     if device == 'cuda':
         model = torch.nn.DataParallel(model)
         cudnn.benchmark = True
-    checkpoint = torch.load('./trained_models/VGG19_Strong.pth')
+    checkpoint = torch.load('./trained_models/ResNeXt29_2x64d_Strong.pth')
     model.load_state_dict(checkpoint['net'])
 
 if dataset == 'MNIST':
