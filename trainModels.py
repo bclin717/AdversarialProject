@@ -16,12 +16,14 @@ from utils import progress_bar
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
 parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
+parser.add_argument('--test', default=False)
 args = parser.parse_args()
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
 best_acc = 0  # best test accuracy
 start_epoch = 0  # start from epoch 0 or last checkpoint epoch
 lrs = [0.1, 0.01, 0.001]
+batch_size = 1
+shuffle = False
 
 # Data
 print('==> Preparing data..')
@@ -37,13 +39,7 @@ transform_test = transforms.Compose([
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
 
-trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=256, shuffle=True, num_workers=8, pin_memory=True)
-
-testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
-testloader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=False, num_workers=8, pin_memory=True)
-
-classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+labels = ['Airplane', 'Automobile', 'Bird', 'Cat', 'Deer', 'Dog', 'Frog', 'Horse', 'Ship', 'Truck']
 
 # Model
 print('==> Building model..')
@@ -59,9 +55,9 @@ print('==> Building model..')
 # net = ShuffleNetG2()
 # net = SENet18()
 # net = ShuffleNetV2(1)
-# net = EfficientNetB0()
-net = EfficientNet.from_pretrained('efficientnet-b0', num_classes=10, dropout_rate=0.5)
+net = EfficientNetB0()
 net = net.to(device)
+
 if device == 'cuda':
     net = torch.nn.DataParallel(net)
     cudnn.benchmark = True
@@ -75,11 +71,6 @@ if args.resume:
     best_acc = checkpoint['acc']
     start_epoch = checkpoint['epoch']
 
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
-
-
-# Training
 def train(epoch):
     print('\nEpoch: %d' % epoch)
     net.train()
@@ -101,7 +92,6 @@ def train(epoch):
 
         progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                      % (train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
-
 
 def test(epoch):
     global best_acc
@@ -138,11 +128,85 @@ def test(epoch):
         best_acc = acc
 
 
-for i in range(0, len(lrs)):
-    optimizer = optim.SGD(net.parameters(), lr=lrs[i], momentum=0.9, weight_decay=5e-4)
-    for epoch in range(start_epoch, 50):
-        train(epoch)
-        test(epoch)
-    start_epoch = 0
+def initParam():
+    global testloader
+    global trainloader
+    global device
+    global optimizer
+    global criterion
 
-# test(0)
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    criterion = nn.CrossEntropyLoss()
+
+
+def main():
+    initParam()
+    NormalDataset()
+
+    if args.train:
+        test(0)
+    else:
+        for i in range(0, len(lrs)):
+            optimizer = optim.SGD(net.parameters(), lr=lrs[i], momentum=0.9, weight_decay=5e-4)
+            for epoch in range(start_epoch, 50):
+                train(epoch)
+                test(epoch)
+            start_epoch = 0
+
+
+def ExtractDatasetSortedByLabels(train=True):
+    if train:
+        name = "TrainSet"
+    else:
+        name = "TestSet"
+    path = "./Clean_CIFAR10/" + name + '/'
+    dataset = torchvision.datasets.CIFAR10(root="./Clean_CIFAR10/", train=train, download=True,
+                                           transform=transforms.Compose([
+                                               transforms.ToTensor()
+                                           ]))
+    loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=8)
+
+    for i in range(0, 10):
+        if not os.path.isdir(path + labels[i]):
+            os.makedirs(path + labels[i])
+
+    print('test set:', len(trainloader))
+    f = open('./Clean_CIFAR10/' + name + '/CIFAR10_Labels.txt', 'w')
+    for i, (img, label) in enumerate(loader):
+        img.to(device)
+        img_path = "./Clean_CIFAR10/" + str(name) + "/" + labels[label] + "/" + str(i) + ".jpg"
+        torchvision.utils.save_image(img, filename=img_path)
+        f.write(img_path + ' ' + str(label.item()) + '\n')
+    f.close()
+
+
+def CustomDataset():
+    global trainloader
+    global testloader
+    train_path = "./Clean_CIFAR10/TrainSet/"
+    test_path = "./Clean_CIFAR10/TestSet"
+
+    if train:
+        dataset = torchvision.datasets.ImageFolder(train_path, transform=transform_train)
+        trainloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=8,
+                                                  pin_memory=True)
+    else:
+        dataset = torchvision.datasets.ImageFolder(test_path, transform=transform_test)
+        testloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=8,
+                                                 pin_memory=True)
+
+
+def NormalDataset():
+    global trainloader
+    global testloader
+    trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=8,
+                                              pin_memory=True)
+
+    testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=8,
+                                             pin_memory=True)
+
+
+if __name__ == '__main__':
+    main()
