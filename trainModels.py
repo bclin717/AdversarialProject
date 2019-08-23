@@ -18,11 +18,12 @@ parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
 parser.add_argument('--test', default=False)
 args = parser.parse_args()
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 best_acc = 0  # best test accuracy
 start_epoch = 0  # start from epoch 0 or last checkpoint epoch
 lrs = [0.1, 0.01, 0.001]
-batch_size = 1
+batch_size = 256
 shuffle = False
 
 # Data
@@ -57,6 +58,9 @@ print('==> Building model..')
 # net = ShuffleNetV2(1)
 net = EfficientNetB0()
 net = net.to(device)
+
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
 
 if device == 'cuda':
     net = torch.nn.DataParallel(net)
@@ -127,23 +131,12 @@ def test(epoch):
         torch.save(state, './checkpoint/ckpt.pth')
         best_acc = acc
 
-
-def initParam():
-    global testloader
-    global trainloader
-    global device
-    global optimizer
-    global criterion
-
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    criterion = nn.CrossEntropyLoss()
-
-
 def main():
-    initParam()
     NormalDataset()
+    global start_epoch
+    global optimizer
 
-    if args.train:
+    if args.test:
         test(0)
     else:
         for i in range(0, len(lrs)):
@@ -152,7 +145,6 @@ def main():
                 train(epoch)
                 test(epoch)
             start_epoch = 0
-
 
 def ExtractDatasetSortedByLabels(train=True):
     if train:
