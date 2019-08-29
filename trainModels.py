@@ -16,7 +16,8 @@ from utils import progress_bar
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
 parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
-parser.add_argument('--test', default=False)
+parser.add_argument('--test')
+parser.add_argument('--retrain', action='store_true')
 args = parser.parse_args()
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -44,7 +45,7 @@ labels = ['Airplane', 'Automobile', 'Bird', 'Cat', 'Deer', 'Dog', 'Frog', 'Horse
 
 # Model
 print('==> Building model..')
-# net = VGG('VGG19')
+net = VGG('VGG19')
 # net = ResNet18()
 # net = PreActResNet18()
 # net = GoogLeNet()
@@ -56,7 +57,7 @@ print('==> Building model..')
 # net = ShuffleNetG2()
 # net = SENet18()
 # net = ShuffleNetV2(1)
-net = EfficientNetB0()
+# net = EfficientNetB0()
 net = net.to(device)
 
 criterion = nn.CrossEntropyLoss()
@@ -72,7 +73,10 @@ if args.resume:
     assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
     checkpoint = torch.load('./checkpoint/ckpt.pth')
     net.load_state_dict(checkpoint['net'])
-    best_acc = checkpoint['acc']
+    if args.retrain:
+        best_acc = 0
+    else:
+        best_acc = checkpoint['acc']
     start_epoch = checkpoint['epoch']
 
 def train(epoch):
@@ -131,20 +135,6 @@ def test(epoch):
         torch.save(state, './checkpoint/ckpt.pth')
         best_acc = acc
 
-def main():
-    NormalDataset()
-    global start_epoch
-    global optimizer
-
-    if args.test:
-        test(0)
-    else:
-        for i in range(0, len(lrs)):
-            optimizer = optim.SGD(net.parameters(), lr=lrs[i], momentum=0.9, weight_decay=5e-4)
-            for epoch in range(start_epoch, 50):
-                train(epoch)
-                test(epoch)
-            start_epoch = 0
 
 def ExtractDatasetSortedByLabels(train=True):
     if train:
@@ -176,16 +166,14 @@ def CustomDataset():
     global trainloader
     global testloader
     train_path = "./Clean_CIFAR10/TrainSet/"
-    test_path = "./Clean_CIFAR10/TestSet"
+    test_path = "./Clean_CIFAR10/TestSet/"
+    trainset = torchvision.datasets.ImageFolder(train_path, transform=transform_train)
+    trainloader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=8,
+                                              pin_memory=True)
 
-    if train:
-        dataset = torchvision.datasets.ImageFolder(train_path, transform=transform_train)
-        trainloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=8,
-                                                  pin_memory=True)
-    else:
-        dataset = torchvision.datasets.ImageFolder(test_path, transform=transform_test)
-        testloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=8,
-                                                 pin_memory=True)
+    testset = torchvision.datasets.ImageFolder(test_path, transform=transform_test)
+    testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=True, num_workers=8,
+                                             pin_memory=True)
 
 
 def NormalDataset():
@@ -198,6 +186,23 @@ def NormalDataset():
     testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=8,
                                              pin_memory=True)
+
+def main():
+    CustomDataset()
+    global start_epoch
+    global optimizer
+
+    if args.test:
+        test(0)
+    else:
+        for i in range(0, len(lrs)):
+            optimizer = optim.SGD(net.parameters(), lr=lrs[i], momentum=0.9, weight_decay=5e-4)
+            for epoch in range(start_epoch, 40):
+                train(epoch)
+                test(epoch)
+            start_epoch = 0
+
+
 
 
 if __name__ == '__main__':
