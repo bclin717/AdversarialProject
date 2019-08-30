@@ -16,7 +16,7 @@ from utils import progress_bar
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
 parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
-parser.add_argument('--test')
+parser.add_argument('--test', action='store_true')
 parser.add_argument('--retrain', action='store_true')
 args = parser.parse_args()
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -45,7 +45,7 @@ labels = ['Airplane', 'Automobile', 'Bird', 'Cat', 'Deer', 'Dog', 'Frog', 'Horse
 
 # Model
 print('==> Building model..')
-net = VGG('VGG19')
+# net = VGG('VGG19')
 # net = ResNet18()
 # net = PreActResNet18()
 # net = GoogLeNet()
@@ -55,7 +55,7 @@ net = VGG('VGG19')
 # net = MobileNetV2()
 # net = DPN92()
 # net = ShuffleNetG2()
-# net = SENet18()
+net = SENet18()
 # net = ShuffleNetV2(1)
 # net = EfficientNetB0()
 net = net.to(device)
@@ -197,7 +197,7 @@ def main():
     else:
         for i in range(0, len(lrs)):
             optimizer = optim.SGD(net.parameters(), lr=lrs[i], momentum=0.9, weight_decay=5e-4)
-            for epoch in range(start_epoch, 40):
+            for epoch in range(start_epoch, 50):
                 train(epoch)
                 test(epoch)
             start_epoch = 0

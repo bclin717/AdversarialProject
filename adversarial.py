@@ -1,5 +1,7 @@
 from __future__ import print_function
 
+import os
+
 import torchvision
 from torch.autograd.gradcheck import zero_gradients
 from torchvision import datasets, transforms
@@ -37,6 +39,7 @@ shuffle = False
 
 save_pics = True
 
+
 unnorm = UnNormalize(mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010))
 # Transform
 transform_test = transforms.Compose([
@@ -60,12 +63,12 @@ if dataset == 'MNIST':
     model = LeNet().to(device)
     model.load_state_dict(torch.load(pretrained_model))
 elif dataset == 'CIFAR10':
-    model = ResNeXt29_2x64d()
+    model = SENet18()
     model = model.to(device)
     if device == 'cuda':
         model = torch.nn.DataParallel(model)
         cudnn.benchmark = True
-    checkpoint = torch.load('./trained_models/ResNeXt29_2x64d_Weak.pth')
+    checkpoint = torch.load('./trained_models/SENet18_Strong.pth')
     model.load_state_dict(checkpoint['net'])
 
 if dataset == 'MNIST':
@@ -80,6 +83,10 @@ if dataset == 'MNIST':
 elif dataset == 'CIFAR10':
     labels = ['Airplane', 'Automobile', 'Bird', 'Cat', 'Deer', 'Dog', 'Frog', 'Horse', 'Ship', 'Truck']
 
+path = "./Adv_CIFAR10/"
+for i in range(0, 10):
+    if not os.path.isdir(path + labels[i]):
+        os.makedirs(path + labels[i])
 
 def main():
     model.eval()
@@ -189,7 +196,8 @@ def test(model, device, test_loader, epsilon, target_num):
             elif final_pred.item() == target_fake1.item():
                 adv_success += 1
                 if save_pics:
-                    name = "./adv/adv_" + "batch" + str(step) + "_" + str(batch) + "_" + labels[target.item()] + "To" + \
+                    name = "./Adv_CIFAR10/" + labels[target.item()] + "/" + "batch" + str(step) + "_" + str(
+                        batch) + "_" + labels[target.item()] + "To" + \
                            labels[target_fake1.item()] + ".png"
                     torchvision.utils.save_image(unnorm(adv), filename=name)
                 # Save some adv examples for visualization later
