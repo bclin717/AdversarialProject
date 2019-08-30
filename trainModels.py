@@ -23,9 +23,9 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 best_acc = 0  # best test accuracy
 start_epoch = 0  # start from epoch 0 or last checkpoint epoch
-lrs = [0.1, 0.01, 0.001]
+lrs = [0.01, 0.001]
 batch_size = 256
-shuffle = False
+shuffle = True
 
 # Data
 print('==> Preparing data..')
@@ -75,9 +75,10 @@ if args.resume:
     net.load_state_dict(checkpoint['net'])
     if args.retrain:
         best_acc = 0
+        start_epoch = 0
     else:
         best_acc = checkpoint['acc']
-    start_epoch = checkpoint['epoch']
+        start_epoch = checkpoint['epoch']
 
 def train(epoch):
     print('\nEpoch: %d' % epoch)
@@ -197,7 +198,7 @@ def main():
     else:
         for i in range(0, len(lrs)):
             optimizer = optim.SGD(net.parameters(), lr=lrs[i], momentum=0.9, weight_decay=5e-4)
-            for epoch in range(start_epoch, 50):
+            for epoch in range(start_epoch, 75):
                 train(epoch)
                 test(epoch)
             start_epoch = 0
