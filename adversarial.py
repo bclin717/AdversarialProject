@@ -63,12 +63,12 @@ if dataset == 'MNIST':
     model = LeNet().to(device)
     model.load_state_dict(torch.load(pretrained_model))
 elif dataset == 'CIFAR10':
-    model = SENet18()
+    model = GoogLeNet()
     model = model.to(device)
     if device == 'cuda':
         model = torch.nn.DataParallel(model)
         cudnn.benchmark = True
-    checkpoint = torch.load('./trained_models/SENet18_Strong.pth')
+    checkpoint = torch.load('./trained_models/GoogleNet_Strong.pth')
     model.load_state_dict(checkpoint['net'])
 
 if dataset == 'MNIST':
@@ -137,6 +137,8 @@ def test(model, device, test_loader, epsilon, target_num):
                 org_incorrect += 1
                 continue
             elif target_fake1.item() == target.item():
+                if init_pred.item() == target.item():
+                    correct += 1
                 continue
 
             topk_index = []
