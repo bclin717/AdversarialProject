@@ -16,9 +16,9 @@ from utils import UnNormalize
 alpha_LL = 4
 alpha_FGSM = 6
 epsilons = [10]
-iter_num_LL = 10
-iter_num_FGSM = 10
-edit_point_num_LL = 2
+iter_num_LL = 8
+iter_num_FGSM = 8
+edit_point_num_LL = 4
 edit_point_num_FGSM = 2
 target_nums = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 momentum = 0.9
@@ -35,7 +35,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 pretrained_model = "./trained_models/lenet_mnist_model.pth"
 dataset = "CIFAR10"
-shuffle = True
+shuffle = False
 
 save_pics = True
 
@@ -124,7 +124,6 @@ def test(model, device, train_loader, epsilon, target_num):
     # Loop over all examples in test set
     for step, (dataAll, targetAll) in enumerate(train_loader):
         for batch in range(0, batch_size):
-            if batch > 10000: break
             data, target = dataAll[batch], targetAll[batch]
             data, target = data.unsqueeze(0).to(device), target.unsqueeze(0).to(device)
             data.requires_grad = True
