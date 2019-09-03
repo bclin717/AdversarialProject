@@ -35,7 +35,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 pretrained_model = "./trained_models/lenet_mnist_model.pth"
 dataset = "CIFAR10"
-shuffle = False
+shuffle = True
 
 save_pics = True
 
@@ -49,26 +49,26 @@ transform_test = transforms.Compose([
 
 # Dataloader
 if dataset == 'MNIST':
-    test_loader = torch.utils.data.DataLoader(
-        datasets.MNIST('../data', train=False, download=True, transform=transforms.Compose([
+    train_loader = torch.utils.data.DataLoader(
+        datasets.MNIST('../data', train=True, download=True, transform=transforms.Compose([
             transforms.ToTensor(),
         ])),
         batch_size=batch_size, shuffle=shuffle)
 elif dataset == 'CIFAR10':
-    test_set = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=shuffle, num_workers=8)
+    train_set = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_test)
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=shuffle, num_workers=8)
 
 # Model
 if dataset == 'MNIST':
     model = LeNet().to(device)
     model.load_state_dict(torch.load(pretrained_model))
 elif dataset == 'CIFAR10':
-    model = GoogLeNet()
+    model = VGG('VGG19')
     model = model.to(device)
     if device == 'cuda':
         model = torch.nn.DataParallel(model)
         cudnn.benchmark = True
-    checkpoint = torch.load('./trained_models/GoogleNet_Strong.pth')
+    checkpoint = torch.load('./trained_models/VGG19_Strong.pth')
     model.load_state_dict(checkpoint['net'])
 
 if dataset == 'MNIST':
@@ -99,14 +99,14 @@ def main():
     # testing
     for eps in epsilons:
         for target_num in target_nums:
-            acc, ex, cl, grads = test(model, device, test_loader, eps, target_num)
+            acc, ex, cl, grads = test(model, device, train_loader, eps, target_num)
             accuracies.append(acc)
             examples.append(ex)
             cleans.append(cl)
             total_grads.append(grads)
 
 
-def test(model, device, test_loader, epsilon, target_num):
+def test(model, device, train_loader, epsilon, target_num):
     tstart = time.time()
     # Accuracy counter
     correct = 0
@@ -122,8 +122,9 @@ def test(model, device, test_loader, epsilon, target_num):
     target_fake1.requires_grad = False
     count = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     # Loop over all examples in test set
-    for step, (dataAll, targetAll) in enumerate(test_loader):
+    for step, (dataAll, targetAll) in enumerate(train_loader):
         for batch in range(0, batch_size):
+            if batch > 10000: break
             data, target = dataAll[batch], targetAll[batch]
             data, target = data.unsqueeze(0).to(device), target.unsqueeze(0).to(device)
             data.requires_grad = True
