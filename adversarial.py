@@ -42,7 +42,7 @@ save_pics = True
 
 unnorm = UnNormalize(mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010))
 # Transform
-transform_test = transforms.Compose([
+transform_train = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
@@ -54,9 +54,15 @@ if dataset == 'MNIST':
             transforms.ToTensor(),
         ])),
         batch_size=batch_size, shuffle=shuffle)
+
 elif dataset == 'CIFAR10':
-    train_set = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_test)
-    train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=shuffle, num_workers=8)
+    # train_set = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_test)
+    # train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=shuffle, num_workers=8)
+    train_path = "./Clean_CIFAR10_For_Adv/TrainSet/"
+    trainset = torchvision.datasets.ImageFolder(train_path, transform=transform_train)
+    train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=False, num_workers=8,
+                                              pin_memory=True)
+
 
 # Model
 if dataset == 'MNIST':
