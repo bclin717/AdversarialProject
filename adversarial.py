@@ -16,9 +16,9 @@ from utils import UnNormalize
 alpha_LL = 4
 alpha_FGSM = 6
 epsilons = [10]
-iter_num_LL = 8
-iter_num_FGSM = 8
-edit_point_num_LL = 4
+iter_num_LL = 7
+iter_num_FGSM = 7
+edit_point_num_LL = 3
 edit_point_num_FGSM = 2
 target_nums = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 momentum = 0.9
