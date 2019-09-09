@@ -58,10 +58,15 @@ if dataset == 'MNIST':
 elif dataset == 'CIFAR10':
     # train_set = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_test)
     # train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=shuffle, num_workers=8)
-    train_path = "./Clean_CIFAR10_For_Adv/TrainSet/"
-    trainset = torchvision.datasets.ImageFolder(train_path, transform=transform_train)
-    train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=False, num_workers=8,
-                                              pin_memory=True)
+
+    test_set = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_train)
+    test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=shuffle, num_workers=8)
+
+
+    # train_path = "./Clean_CIFAR10_For_Adv/TrainSet/"
+    # trainset = torchvision.datasets.ImageFolder(train_path, transform=transform_train)
+    # train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=False, num_workers=8,
+    #                                           pin_memory=True)
 
 
 # Model
@@ -105,7 +110,7 @@ def main():
     # testing
     for eps in epsilons:
         for target_num in target_nums:
-            acc, ex, cl, grads = test(model, device, train_loader, eps, target_num)
+            acc, ex, cl, grads = test(model, device, test_loader, eps, target_num)
             accuracies.append(acc)
             examples.append(ex)
             cleans.append(cl)
