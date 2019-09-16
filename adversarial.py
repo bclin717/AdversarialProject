@@ -70,28 +70,20 @@ elif dataset == 'CIFAR10':
 
 
 # Model
-if dataset == 'MNIST':
-    model = LeNet().to(device)
-    model.load_state_dict(torch.load(pretrained_model))
-elif dataset == 'CIFAR10':
-    model = VGG('VGG19')
+if dataset == 'CIFAR10':
+    model = ResNeXt29_2x64d()
     model = model.to(device)
     if device == 'cuda':
         model = torch.nn.DataParallel(model)
         cudnn.benchmark = True
-    checkpoint = torch.load('./trained_models/VGG19_Strong.pth')
+    checkpoint = torch.load('./trained_models/ResNeXt29_2x64d_Retrained.pth')
     model.load_state_dict(checkpoint['net'])
 
-if dataset == 'MNIST':
-    image_size = 28
-    channel_size = 1
-elif dataset == 'CIFAR10':
+if dataset == 'CIFAR10':
     image_size = 32
     channel_size = 3
 
-if dataset == 'MNIST':
-    labels = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
-elif dataset == 'CIFAR10':
+if dataset == 'CIFAR10':
     labels = ['Airplane', 'Automobile', 'Bird', 'Cat', 'Deer', 'Dog', 'Frog', 'Horse', 'Ship', 'Truck']
 
 path = "./Adv_CIFAR10/"

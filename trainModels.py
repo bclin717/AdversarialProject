@@ -1,4 +1,3 @@
-'''Train CIFAR10 with PyTorch.'''
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -21,8 +20,7 @@ parser.add_argument('--retrain', action='store_true')
 args = parser.parse_args()
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-best_acc = 0  # best test accuracy
-start_epoch = 0  # start from epoch 0 or last checkpoint epoch
+# start from epoch 0 or last checkpoint epoch
 lrs = [0.1, 0.01, 0.001]
 batch_size = 256
 shuffle = True
@@ -43,44 +41,7 @@ transform_test = transforms.Compose([
 
 labels = ['Airplane', 'Automobile', 'Bird', 'Cat', 'Deer', 'Dog', 'Frog', 'Horse', 'Ship', 'Truck']
 
-# Model
-print('==> Building model..')
-# net = VGG('VGG19')
-# net = ResNet18()
-# net = PreActResNet18()
-# net = GoogLeNet()
-# net = DenseNet121()
-# net = ResNeXt29_2x64d()
-# net = MobileNet()
-# net = MobileNetV2()
-# net = DPN92()
-# net = ShuffleNetG2()
-net = SENet18()
-# net = ShuffleNetV2(1)
-# net = EfficientNetB0()
-net = net.to(device)
-
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
-
-if device == 'cuda':
-    net = torch.nn.DataParallel(net)
-    cudnn.benchmark = True
-
-if args.resume:
-    # Load checkpoint.
-    print('==> Resuming from checkpoint..')
-    assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
-    checkpoint = torch.load('./checkpoint/ckpt.pth')
-    net.load_state_dict(checkpoint['net'])
-    if args.retrain:
-        best_acc = 0
-        start_epoch = 0
-    else:
-        best_acc = checkpoint['acc']
-        start_epoch = checkpoint['epoch']
-
-def train(epoch):
+def train(net, epoch, criterion, optimizer):
     print('\nEpoch: %d' % epoch)
     net.train()
     train_loss = 0
@@ -102,8 +63,7 @@ def train(epoch):
         progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                      % (train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
 
-def test(epoch):
-    global best_acc
+def test(net, epoch, criterion, best_acc):
     net.eval()
     test_loss = 0
     correct = 0
@@ -136,7 +96,6 @@ def test(epoch):
         torch.save(state, './checkpoint/ckpt.pth')
         best_acc = acc
 
-
 def ExtractDatasetSortedByLabels(train=True):
     if train:
         name = "TrainSet"
@@ -162,7 +121,6 @@ def ExtractDatasetSortedByLabels(train=True):
         f.write(img_path + ' ' + str(label.item()) + '\n')
     f.close()
 
-
 def CustomDataset():
     global trainloader
     global testloader
@@ -176,7 +134,6 @@ def CustomDataset():
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=True, num_workers=8,
                                              pin_memory=True)
 
-
 def NormalDataset():
     global trainloader
     global testloader
@@ -189,22 +146,48 @@ def NormalDataset():
                                              pin_memory=True)
 
 def main():
-    CustomDataset()
-    global start_epoch
-    global optimizer
+    start_epoch = 0
 
+    # Model
+    print('==> Building model..')
+    net = VGG('VGG19')
+    # net = ResNet18()
+    # net = ResNeXt29_2x64d()
+    # net = EfficientNetB0()
+
+    net = net.to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
+
+    if device == 'cuda':
+        net = torch.nn.DataParallel(net)
+        cudnn.benchmark = True
+
+    if args.resume:
+        # Load checkpoint.
+        print('==> Resuming from checkpoint..')
+        assert os.path.isdir('checkpoint'), 'Error: no checkpoint directory found!'
+        checkpoint = torch.load('./checkpoint/ckpt.pth')
+        net.load_state_dict(checkpoint['net'])
+        if args.retrain:
+            best_acc = 0
+            start_epoch = 0
+        else:
+            best_acc = checkpoint['acc']
+            start_epoch = checkpoint['epoch']
+
+    # Testing or Training
     if args.test:
-        test(0)
+        NormalDataset()
+        test(net, 0, criterion, best_acc)
     else:
+        CustomDataset()
         for i in range(0, len(lrs)):
             optimizer = optim.SGD(net.parameters(), lr=lrs[i], momentum=0.9, weight_decay=5e-4)
             for epoch in range(start_epoch, 50):
-                train(epoch)
-                test(epoch)
+                train(net, epoch, criterion, optimizer)
+                test(net, epoch, criterion, best_acc)
             start_epoch = 0
-
-
-
 
 if __name__ == '__main__':
     main()

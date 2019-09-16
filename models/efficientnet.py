@@ -87,6 +87,24 @@ def EfficientNetB0():
            (6, 320, 1, 2)]
     return EfficientNet(cfg)
 
+def EfficientNetB1():
+    # (expansion, out_planes, num_blocks, stride)
+    cfg = [(1, 16, 1, 2),
+           (6, 24, 2, 1),
+           (6, 40, 2, 2),
+           (6, 80, 3, 2),
+           (6, 112, 3, 1),
+           (6, 192, 4, 2),
+           (6, 320, 1, 2),
+           (1, 16, 1, 2),
+           (6, 24, 2, 1),
+           (6, 40, 2, 2),
+           (6, 80, 3, 2),
+           (6, 112, 3, 1),
+           (6, 192, 4, 2),
+           (6, 320, 1, 2)]
+    return EfficientNet(cfg)
+
 
 def test():
     net = EfficientNetB0()
