@@ -1,21 +1,20 @@
 from __future__ import print_function
 
 import os
+import time
 
+import torch.backends.cudnn as cudnn
 import torchvision
 from torch.autograd.gradcheck import zero_gradients
-from torchvision import datasets, transforms
-import time
-import numpy as np
-import torch.backends.cudnn as cudnn
-from models import *
+from torchvision import transforms
 
+from models import *
 # Configuration
 from utils import UnNormalize
 
 alpha_LL = 4
 alpha_FGSM = 6
-epsilons = [10]
+epsilons = 10
 iter_num_LL = 7
 iter_num_FGSM = 7
 edit_point_num_LL = 3
@@ -26,19 +25,15 @@ count = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 batch_size = 1
 attack_method = "ITER"
-
+dataset = "CIFAR10"
+shuffle = False
+save_pics = True
 
 # Set CUDA
 use_cuda = True
-print("CUDA Available: ", torch.cuda.is_available())
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-pretrained_model = "./trained_models/lenet_mnist_model.pth"
-dataset = "CIFAR10"
-shuffle = False
-
-save_pics = True
-
+model_url = './trained_models/VGG19_Retrained.pth'
 
 unnorm = UnNormalize(mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010))
 # Transform
@@ -48,43 +43,34 @@ transform_train = transforms.Compose([
 ])
 
 # Dataloader
-if dataset == 'MNIST':
-    train_loader = torch.utils.data.DataLoader(
-        datasets.MNIST('../data', train=True, download=True, transform=transforms.Compose([
-            transforms.ToTensor(),
-        ])),
-        batch_size=batch_size, shuffle=shuffle)
-
-elif dataset == 'CIFAR10':
-    # train_set = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_test)
-    # train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=shuffle, num_workers=8)
-
+if dataset == 'CIFAR10':
+    # Test unseen
     test_set = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_train)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=shuffle, num_workers=8)
 
-
+    # 首次攻擊
     # train_path = "./Clean_CIFAR10_For_Adv/TrainSet/"
     # trainset = torchvision.datasets.ImageFolder(train_path, transform=transform_train)
     # train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=False, num_workers=8,
     #                                           pin_memory=True)
 
-
 # Model
 if dataset == 'CIFAR10':
-    model = ResNeXt29_2x64d()
+    # 每次都要改
+    model = VGG('VGG19')
     model = model.to(device)
     if device == 'cuda':
         model = torch.nn.DataParallel(model)
         cudnn.benchmark = True
-    checkpoint = torch.load('./trained_models/ResNeXt29_2x64d_Retrained.pth')
+    # 每次都要改
+    checkpoint = torch.load(model_url)
     model.load_state_dict(checkpoint['net'])
 
 if dataset == 'CIFAR10':
     image_size = 32
     channel_size = 3
 
-if dataset == 'CIFAR10':
-    labels = ['Airplane', 'Automobile', 'Bird', 'Cat', 'Deer', 'Dog', 'Frog', 'Horse', 'Ship', 'Truck']
+labels = ['Airplane', 'Automobile', 'Bird', 'Cat', 'Deer', 'Dog', 'Frog', 'Horse', 'Ship', 'Truck']
 
 path = "./Adv_CIFAR10/"
 for i in range(0, 10):
@@ -94,19 +80,9 @@ for i in range(0, 10):
 def main():
     model.eval()
 
-    accuracies = []
-    examples = []
-    cleans = []
-    total_grads = []
-
     # testing
-    for eps in epsilons:
-        for target_num in target_nums:
-            acc, ex, cl, grads = test(model, device, test_loader, eps, target_num)
-            accuracies.append(acc)
-            examples.append(ex)
-            cleans.append(cl)
-            total_grads.append(grads)
+    for target_num in target_nums:
+        test(model, device, test_loader, epsilons, target_num)
 
 
 def test(model, device, train_loader, epsilon, target_num):
@@ -116,10 +92,6 @@ def test(model, device, train_loader, epsilon, target_num):
     adv_success = 0
     incorrect = 0
     org_incorrect = 0
-
-    adv_examples = []
-    cl_examples = []
-    grads = []
 
     target_fake1 = torch.tensor([target_num]).to(device)
     target_fake1.requires_grad = False
@@ -155,7 +127,7 @@ def test(model, device, train_loader, epsilon, target_num):
                 if pred == target_fake1:
                     break
                 loss = F.nll_loss(output, target_fake1)
-                loss.backward(retain_graph=False)
+                loss.backward()
 
                 data_grad = data.grad.data
 
@@ -176,7 +148,7 @@ def test(model, device, train_loader, epsilon, target_num):
                 if pred == target_fake1:
                     break
                 loss = F.nll_loss(output, target)
-                loss.backward(retain_graph=False)
+                loss.backward()
 
                 data_grad = data.grad.data
 
@@ -191,8 +163,6 @@ def test(model, device, train_loader, epsilon, target_num):
                 adv = fgsm_attack_topK(adv, data_grad, topk_index2)
                 data.data = adv
 
-            total_g = adv - image_tensor
-
             # Check for success
             output = model(data)
             final_pred = output.max(1, keepdim=True)[1]  # get the index of the max log-probability
@@ -205,14 +175,6 @@ def test(model, device, train_loader, epsilon, target_num):
                         batch) + "_" + labels[target.item()] + "To" + \
                            labels[target_fake1.item()] + ".png"
                     torchvision.utils.save_image(unnorm(adv), filename=name)
-                # Save some adv examples for visualization later
-                if len(adv_examples) < 100:
-                    adv_ex = adv.squeeze().detach().cpu().numpy()
-                    adv_examples.append((init_pred.item(), final_pred.item(), adv_ex))
-                    clean = image_tensor.squeeze().detach().cpu().numpy()
-                    cl_examples.append(clean)
-                    grads.append(total_g)
-
             if final_pred.item() != target.item():
                 count[final_pred] += 1
                 incorrect += 1
@@ -234,8 +196,6 @@ def test(model, device, train_loader, epsilon, target_num):
                                                                       final_adv_suc))
     print("Cost time : {:.2f} seconds".format(tend - tstart))
     print("")
-
-    return final_acc, adv_examples, cl_examples, grads
 
 
 # FGSM attack code

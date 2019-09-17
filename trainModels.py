@@ -1,13 +1,10 @@
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.backends.cudnn as cudnn
+import argparse
+import os
 
+import torch.backends.cudnn as cudnn
+import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
-
-import os
-import argparse
 
 from models import *
 from utils import progress_bar
@@ -21,7 +18,7 @@ args = parser.parse_args()
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # start from epoch 0 or last checkpoint epoch
-lrs = [0.1, 0.01, 0.001]
+lrs = [0.01, 0.001]
 batch_size = 256
 shuffle = True
 
@@ -41,7 +38,19 @@ transform_test = transforms.Compose([
 
 labels = ['Airplane', 'Automobile', 'Bird', 'Cat', 'Deer', 'Dog', 'Frog', 'Horse', 'Ship', 'Truck']
 
-def train(net, epoch, criterion, optimizer):
+
+def train(net, start_epoch, lr, best_acc):
+    for epoch in range(start_epoch, 50):
+        train_epoch(net, epoch, lr)
+        test_epoch(net, epoch, best_acc)
+    test_epoch(net, 0, best_acc)
+
+
+def train_epoch(net, epoch, lr):
+    CustomDataset()
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(net.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4)
+    # optimizer = torch.optim.Adam(net.parameters(), lr=lr, betas=(0.9, 0.999))
     print('\nEpoch: %d' % epoch)
     net.train()
     train_loss = 0
@@ -63,7 +72,10 @@ def train(net, epoch, criterion, optimizer):
         progress_bar(batch_idx, len(trainloader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
                      % (train_loss / (batch_idx + 1), 100. * correct / total, correct, total))
 
-def test(net, epoch, criterion, best_acc):
+
+def test_epoch(net, epoch, best_acc):
+    NormalDataset()
+    criterion = nn.CrossEntropyLoss()
     net.eval()
     test_loss = 0
     correct = 0
@@ -96,6 +108,7 @@ def test(net, epoch, criterion, best_acc):
         torch.save(state, './checkpoint/ckpt.pth')
         best_acc = acc
 
+
 def ExtractDatasetSortedByLabels(train=True):
     if train:
         name = "TrainSet"
@@ -121,6 +134,7 @@ def ExtractDatasetSortedByLabels(train=True):
         f.write(img_path + ' ' + str(label.item()) + '\n')
     f.close()
 
+
 def CustomDataset():
     global trainloader
     global testloader
@@ -134,6 +148,7 @@ def CustomDataset():
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=True, num_workers=8,
                                              pin_memory=True)
 
+
 def NormalDataset():
     global trainloader
     global testloader
@@ -145,8 +160,10 @@ def NormalDataset():
     testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=8,
                                              pin_memory=True)
 
+
 def main():
     start_epoch = 0
+    best_acc = 0
 
     # Model
     print('==> Building model..')
@@ -156,8 +173,6 @@ def main():
     # net = EfficientNetB0()
 
     net = net.to(device)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
 
     if device == 'cuda':
         net = torch.nn.DataParallel(net)
@@ -178,16 +193,10 @@ def main():
 
     # Testing or Training
     if args.test:
-        NormalDataset()
-        test(net, 0, criterion, best_acc)
+        test_epoch(net, 0, best_acc)
     else:
-        CustomDataset()
-        for i in range(0, len(lrs)):
-            optimizer = optim.SGD(net.parameters(), lr=lrs[i], momentum=0.9, weight_decay=5e-4)
-            for epoch in range(start_epoch, 50):
-                train(net, epoch, criterion, optimizer)
-                test(net, epoch, criterion, best_acc)
-            start_epoch = 0
+        train(net, start_epoch, 0.1, best_acc)
+
 
 if __name__ == '__main__':
     main()
