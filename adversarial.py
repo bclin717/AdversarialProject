@@ -9,7 +9,6 @@ from torch.autograd.gradcheck import zero_gradients
 from torchvision import transforms
 
 from models import *
-# Configuration
 from utils import UnNormalize
 
 alpha_LL = 4
@@ -93,8 +92,8 @@ def test(model, device, train_loader, epsilon, target_num):
     incorrect = 0
     org_incorrect = 0
 
-    target_fake1 = torch.tensor([target_num]).to(device)
-    target_fake1.requires_grad = False
+    target_fake = torch.tensor([target_num]).to(device)
+    target_fake.requires_grad = False
     count = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     # Loop over all examples in test set
     for step, (dataAll, targetAll) in enumerate(train_loader):
@@ -111,70 +110,28 @@ def test(model, device, train_loader, epsilon, target_num):
             if init_pred.item() != target.item():
                 org_incorrect += 1
                 continue
-            elif target_fake1.item() == target.item():
+            elif target_fake.item() == target.item():
                 if init_pred.item() == target.item():
                     correct += 1
                 continue
 
-            topk_index = []
-            topk_index2 = []
             image_tensor = data.data.clone()
 
-            for i in range(0, iter_num_LL):
-                zero_gradients(data)
-                output = model(data)
-                pred = output.max(1, keepdim=True)[1]
-                if pred == target_fake1:
-                    break
-                loss = F.nll_loss(output, target_fake1)
-                loss.backward()
-
-                data_grad = data.grad.data
-
-                # Top K
-                if i == 0:
-                    data_grad_r = data_grad.clone().reshape(-1)
-                    data_grad_abs = torch.abs(data_grad_r)
-                    topk = torch.topk(data_grad_abs, edit_point_num_LL)
-                    topk_index = topk[1]
-
-                adv = iter_attack_topK_sourceTargeting(data, data_grad, image_tensor, topk_index, epsilon)
-                data.data = adv
-
-            for i in range(0, iter_num_FGSM):
-                zero_gradients(data)
-                output = model(data)
-                pred = output.max(1, keepdim=True)[1]
-                if pred == target_fake1:
-                    break
-                loss = F.nll_loss(output, target)
-                loss.backward()
-
-                data_grad = data.grad.data
-
-                # Top K
-                if i == 0:
-                    data_grad_r = data_grad.clone().reshape(-1)
-                    data_grad_abs = torch.abs(data_grad_r)
-                    topk = torch.topk(data_grad_abs, edit_point_num_FGSM)
-                    topk_index2 = topk[1]
-
-                # Attack
-                adv = fgsm_attack_topK(adv, data_grad, topk_index2)
-                data.data = adv
+            data = iterativeAttack(iter_num_LL, image_tensor, data, target_fake, epsilon, sourceTargetingAttack_topK)
+            data = iterativeAttack(iter_num_FGSM, image_tensor, data, target_fake, epsilon, fgsmAttack_topK)
 
             # Check for success
             output = model(data)
             final_pred = output.max(1, keepdim=True)[1]  # get the index of the max log-probability
             if final_pred.item() == target.item():
                 correct += 1
-            elif final_pred.item() == target_fake1.item():
+            elif final_pred.item() == target_fake.item():
                 adv_success += 1
                 if save_pics:
                     name = "./Adv_CIFAR10/" + labels[target.item()] + "/" + "batch" + str(step) + "_" + str(
                         batch) + "_" + labels[target.item()] + "To" + \
-                           labels[target_fake1.item()] + ".png"
-                    torchvision.utils.save_image(unnorm(adv), filename=name)
+                           labels[target_fake.item()] + ".png"
+                    torchvision.utils.save_image(unnorm(data), filename=name)
             if final_pred.item() != target.item():
                 count[final_pred] += 1
                 incorrect += 1
@@ -198,8 +155,31 @@ def test(model, device, train_loader, epsilon, target_num):
     print("")
 
 
-# FGSM attack code
-def iter_attack_topK_sourceTargeting(image, data_grad, image_tensor, topk_index, epsilon):
+def iterativeAttack(iterNum, image_tensor, data, target_fake, epsilon, attackMethod):
+    for i in range(0, iterNum):
+        zero_gradients(data)
+        output = model(data)
+        pred = output.max(1, keepdim=True)[1]
+        if pred == target_fake:
+            break
+        loss = F.nll_loss(output, target_fake)
+        loss.backward()
+
+        data_grad = data.grad.data
+
+        # Top K
+        if i == 0:
+            data_grad_r = data_grad.clone().reshape(-1)
+            data_grad_abs = torch.abs(data_grad_r)
+            topk = torch.topk(data_grad_abs, edit_point_num_LL)
+            topk_index = topk[1]
+
+        adv = attackMethod(data, data_grad, image_tensor, topk_index, epsilon)
+        data.data = adv
+    return data
+
+
+def sourceTargetingAttack_topK(image, data_grad, image_tensor, topk_index, epsilon):
     sign_data_grad = data_grad.sign()
 
     perturbed_image = image.clone()
@@ -221,16 +201,9 @@ def iter_attack_topK_sourceTargeting(image, data_grad, image_tensor, topk_index,
     return adv
 
 
-def fgsm_attack(image, data_grad):
+def fgsmAttack_topK(image, data_grad, image_tensor, topk_index, epsilon):
     sign_data_grad = data_grad.sign()
-    perturbed_image = image.clone()
-    g = torch.zeros(perturbed_image.size()).to(device)
-    perturbed_image = perturbed_image + alpha_FGSM * sign_data_grad
-    return perturbed_image
 
-
-def fgsm_attack_topK(image, data_grad, topk_index):
-    sign_data_grad = data_grad.sign()
     perturbed_image = image.clone()
     g = torch.zeros(perturbed_image.size()).to(device)
     v = 0
@@ -243,6 +216,13 @@ def fgsm_attack_topK(image, data_grad, topk_index):
         g[0][c][m][n] = g[0][c][m][n] + v
 
     perturbed_image.data = perturbed_image.data + g.data
+    return perturbed_image
+
+def fgsm_attack(image, data_grad):
+    sign_data_grad = data_grad.sign()
+    perturbed_image = image.clone()
+    g = torch.zeros(perturbed_image.size()).to(device)
+    perturbed_image = perturbed_image + alpha_FGSM * sign_data_grad
     return perturbed_image
 
 if __name__ == '__main__':
