@@ -45,7 +45,7 @@ transform_train = transforms.Compose([
 if dataset == 'CIFAR10':
     # Test unseen
     test_set = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_train)
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=shuffle, num_workers=8)
+    test_loader = torch.utils.data.DataLoader(test_set, batch_size=1, shuffle=shuffle, num_workers=8)
 
     # 首次攻擊
     # train_path = "./Clean_CIFAR10_For_Adv/TrainSet/"
@@ -72,19 +72,19 @@ if dataset == 'CIFAR10':
 labels = ['Airplane', 'Automobile', 'Bird', 'Cat', 'Deer', 'Dog', 'Frog', 'Horse', 'Ship', 'Truck']
 
 path = "./Adv_CIFAR10/"
-for i in range(0, 10):
-    if not os.path.isdir(path + labels[i]):
-        os.makedirs(path + labels[i])
+for num in range(0, 10):
+    if not os.path.isdir(path + labels[num]):
+        os.makedirs(path + labels[num])
+
 
 def main():
     model.eval()
-
     # testing
     for target_num in target_nums:
         test(model, device, test_loader, epsilons, target_num)
 
 
-def test(model, device, train_loader, epsilon, target_num):
+def test(model, device, test_loader, epsilon, target_num):
     tstart = time.time()
     # Accuracy counter
     correct = 0
@@ -96,48 +96,47 @@ def test(model, device, train_loader, epsilon, target_num):
     target_fake.requires_grad = False
     count = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     # Loop over all examples in test set
-    for step, (dataAll, targetAll) in enumerate(train_loader):
-        for batch in range(0, batch_size):
-            data, target = dataAll[batch], targetAll[batch]
-            data, target = data.unsqueeze(0).to(device), target.unsqueeze(0).to(device)
-            data.requires_grad = True
-            target.requires_grad = False
+    for step, (data, target) in enumerate(test_loader):
+        data, target = data.to(device), target.to(device)
+        data.requires_grad = True
+        target.requires_grad = False
 
-            # Forward pass the data through the model
-            output = model(data)
-            init_pred = output.max(1, keepdim=True)[1]
+        # Forward pass the data through the model
+        output = model(data)
+        init_pred = output.max(1, keepdim=True)[1]
 
-            if init_pred.item() != target.item():
-                org_incorrect += 1
-                continue
-            elif target_fake.item() == target.item():
-                if init_pred.item() == target.item():
-                    correct += 1
-                continue
-
-            image_tensor = data.data.clone()
-
-            data = iter_ST_Attack(data, target_fake, image_tensor, epsilon)
-            data = BIM_Attack(data, target_fake, target)
-
-            # Check for success
-            output = model(data)
-            final_pred = output.max(1, keepdim=True)[1]  # get the index of the max log-probability
-            if final_pred.item() == target.item():
+        if init_pred.item() != target.item():
+            org_incorrect += 1
+            continue
+        elif target_fake.item() == target.item():
+            if init_pred.item() == target.item():
                 correct += 1
-            elif final_pred.item() == target_fake.item():
-                adv_success += 1
-                if save_pics:
-                    name = "./Adv_CIFAR10/" + labels[target.item()] + "/" + "batch" + str(step) + "_" + str(
-                        batch) + "_" + labels[target.item()] + "To" + \
-                           labels[target_fake.item()] + ".png"
-                    torchvision.utils.save_image(unnorm(data.data), filename=name)
-            if final_pred.item() != target.item():
-                count[final_pred] += 1
-                incorrect += 1
+            continue
+
+        image_tensor = data.data.clone()
+
+        data = iter_ST_Attack(data, target_fake, image_tensor, epsilon)
+        data = BIM_Attack(data, target_fake, target)
+
+        # Check for success
+        output = model(data)
+        final_pred = output.max(1, keepdim=True)[1]  # get the index of the max log-probability
+        if final_pred.item() == target.item():
+            correct += 1
+        elif final_pred.item() == target_fake.item():
+            adv_success += 1
+            print(step, "+1")
+            if save_pics:
+                name = "./Adv_CIFAR10/" + labels[target.item()] + "/" + "batch" + str(step) + "_" + labels[
+                    target.item()] + "To" + \
+                       labels[target_fake.item()] + ".png"
+                torchvision.utils.save_image(unnorm(data), filename=name)
+        if final_pred.item() != target.item():
+            count[final_pred] += 1
+            incorrect += 1
 
     # Calculate final accuracy for this epsilon
-    allnum = (step + 1) * (batch + 1)
+    allnum = (step + 1)
     final_acc = correct / float(allnum)
     final_incorrect = incorrect / float(allnum - org_incorrect)
     final_adv_suc = adv_success / float(allnum - org_incorrect)
@@ -153,7 +152,6 @@ def test(model, device, train_loader, epsilon, target_num):
                                                                       final_adv_suc))
     print("Cost time : {:.2f} seconds".format(tend - tstart))
     print("")
-
 
 def iter_ST_Attack(data, target_fake, image_tensor, epsilon):
     for i in range(0, iter_num_LL):
@@ -174,10 +172,8 @@ def iter_ST_Attack(data, target_fake, image_tensor, epsilon):
             topk = torch.topk(data_grad_abs, edit_point_num_LL)
             topk_index = topk[1]
 
-        adv = sourceTargetingAttack_topK(data, data_grad, image_tensor, topk_index, epsilon)
-        data.data = adv
+        data.data = sourceTargetingAttack_topK(data, data_grad, image_tensor, topk_index, epsilon)
     return data
-
 
 def BIM_Attack(data, target_fake, target):
     for i in range(0, iter_num_FGSM):
@@ -198,9 +194,9 @@ def BIM_Attack(data, target_fake, target):
             topk = torch.topk(data_grad_abs, edit_point_num_FGSM)
             topk_index = topk[1]
 
-        adv = fgsmAttack_topK(data, data_grad, topk_index)
-        data.data = adv
+        data.data = fgsmAttack_topK(data, data_grad, topk_index)
     return data
+
 
 def sourceTargetingAttack_topK(image, data_grad, image_tensor, topk_index, epsilon):
     sign_data_grad = data_grad.sign()
@@ -241,12 +237,14 @@ def fgsmAttack_topK(image, data_grad, topk_index):
     perturbed_image.data = perturbed_image.data + g.data
     return perturbed_image
 
+
 def fgsm_attack(image, data_grad):
     sign_data_grad = data_grad.sign()
     perturbed_image = image.clone()
     g = torch.zeros(perturbed_image.size()).to(device)
     perturbed_image = perturbed_image + alpha_FGSM * sign_data_grad
     return perturbed_image
+
 
 if __name__ == '__main__':
     main()
