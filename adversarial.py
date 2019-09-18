@@ -117,21 +117,24 @@ def test(model, device, train_loader, epsilon, target_num):
 
             image_tensor = data.data.clone()
 
-            data = iterativeAttack(iter_num_LL, image_tensor, data, target_fake, epsilon, sourceTargetingAttack_topK)
-            data = iterativeAttack(iter_num_FGSM, image_tensor, data, target_fake, epsilon, fgsmAttack_topK)
+            data2 = iterativeAttack(iter_num_LL, image_tensor, data, target_fake, epsilon, sourceTargetingAttack_topK,
+                                    edit_point_num_LL)
+            data3 = iterativeAttack(iter_num_FGSM, image_tensor, data2, target, epsilon, fgsmAttack_topK,
+                                    edit_point_num_FGSM)
 
             # Check for success
-            output = model(data)
+            output = model(data3)
             final_pred = output.max(1, keepdim=True)[1]  # get the index of the max log-probability
             if final_pred.item() == target.item():
                 correct += 1
             elif final_pred.item() == target_fake.item():
                 adv_success += 1
+                print("+1")
                 if save_pics:
                     name = "./Adv_CIFAR10/" + labels[target.item()] + "/" + "batch" + str(step) + "_" + str(
                         batch) + "_" + labels[target.item()] + "To" + \
                            labels[target_fake.item()] + ".png"
-                    torchvision.utils.save_image(unnorm(data), filename=name)
+                    torchvision.utils.save_image(unnorm(data3.data), filename=name)
             if final_pred.item() != target.item():
                 count[final_pred] += 1
                 incorrect += 1
@@ -155,29 +158,28 @@ def test(model, device, train_loader, epsilon, target_num):
     print("")
 
 
-def iterativeAttack(iterNum, image_tensor, data, target_fake, epsilon, attackMethod):
+def iterativeAttack(iterNum, image_tensor, data, targetLabel, epsilon, attackMethod, editedPointsNum):
     for i in range(0, iterNum):
         zero_gradients(data)
         output = model(data)
         pred = output.max(1, keepdim=True)[1]
-        if pred == target_fake:
+        if pred == targetLabel:
             break
-        loss = F.nll_loss(output, target_fake)
+        loss = F.nll_loss(output, targetLabel)
         loss.backward()
 
         data_grad = data.grad.data
-
+        topk_index = []
         # Top K
         if i == 0:
             data_grad_r = data_grad.clone().reshape(-1)
             data_grad_abs = torch.abs(data_grad_r)
-            topk = torch.topk(data_grad_abs, edit_point_num_LL)
+            topk = torch.topk(data_grad_abs, editedPointsNum)
             topk_index = topk[1]
 
         adv = attackMethod(data, data_grad, image_tensor, topk_index, epsilon)
         data.data = adv
     return data
-
 
 def sourceTargetingAttack_topK(image, data_grad, image_tensor, topk_index, epsilon):
     sign_data_grad = data_grad.sign()
@@ -199,7 +201,6 @@ def sourceTargetingAttack_topK(image, data_grad, image_tensor, topk_index, epsil
     adv = image_tensor + total_grad
 
     return adv
-
 
 def fgsmAttack_topK(image, data_grad, image_tensor, topk_index, epsilon):
     sign_data_grad = data_grad.sign()
