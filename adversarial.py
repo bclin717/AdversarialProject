@@ -18,7 +18,7 @@ iter_num_LL = 7
 iter_num_FGSM = 7
 edit_point_num_LL = 3
 edit_point_num_FGSM = 2
-target_nums = [0]
+target_nums = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 momentum = 0.9
 count = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
@@ -83,10 +83,7 @@ def main():
     model.eval()
     # testing
     for target_num in target_nums:
-        for i in range(3, 10):
-            iter_num_LL = i
-            iter_num_FGSM = i
-            test(model, device, train_loader, epsilons, target_num)
+        test(model, device, train_loader, epsilons, target_num)
 
 
 def test(model, device, test_loader, epsilon, target_num):
