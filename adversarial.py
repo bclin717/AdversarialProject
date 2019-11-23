@@ -11,6 +11,8 @@ from torchvision import transforms
 from models import *
 from utils import UnNormalize
 
+from torchattacks import *
+
 alpha_LL = 4
 alpha_FGSM = 6
 epsilons = 10
@@ -32,7 +34,7 @@ save_pics = True
 use_cuda = True
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-model_url = './trained_models/VGG19_Strong.pth'
+model_url = './trained_models/VGG19_Retrained.pth'
 
 unnorm = UnNormalize(mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010))
 # Transform
@@ -243,10 +245,8 @@ def fgsmAttack_topK(data, data_grad, topk_index):
 def fgsm_attack(image, data_grad):
     sign_data_grad = data_grad.sign()
     perturbed_image = image.clone()
-    g = torch.zeros(perturbed_image.size()).to(device)
     perturbed_image = perturbed_image + alpha_FGSM * sign_data_grad
     return perturbed_image
-
 
 if __name__ == '__main__':
     main()

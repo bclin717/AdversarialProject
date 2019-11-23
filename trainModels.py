@@ -19,7 +19,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # start from epoch 0 or last checkpoint epoch
 lrs = [0.01, 0.001]
-batch_size = 256
+batch_size = 512
 shuffle = True
 
 # Data
@@ -42,7 +42,7 @@ labels = ['Airplane', 'Automobile', 'Bird', 'Cat', 'Deer', 'Dog', 'Frog', 'Horse
 def train(net, start_epoch, lr, best_acc):
     for epoch in range(start_epoch, 50):
         train_epoch(net, epoch, lr)
-        test_epoch(net, epoch, best_acc)
+        best_acc = test_epoch(net, epoch, best_acc)
     test_epoch(net, 0, best_acc)
 
 
@@ -106,7 +106,8 @@ def test_epoch(net, epoch, best_acc):
         if not os.path.isdir('checkpoint'):
             os.mkdir('checkpoint')
         torch.save(state, './checkpoint/ckpt.pth')
-        best_acc = acc
+
+    return acc
 
 
 def ExtractDatasetSortedByLabels(train=True):
@@ -195,8 +196,7 @@ def main():
     if args.test:
         test_epoch(net, 0, best_acc)
     else:
-        train(net, start_epoch, 0.1, best_acc)
-
+        train(net, start_epoch, 0.001, best_acc)
 
 if __name__ == '__main__':
     main()
