@@ -16,13 +16,13 @@ from torchattacks import *
 alpha_LL = 4
 alpha_FGSM = 6
 epsilons = 10
-iter_num_LL = 7
-iter_num_FGSM = 7
-edit_point_num_LL = 3
-edit_point_num_FGSM = 2
-target_nums = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+iter_num_LL = 10
+iter_num_FGSM = 10
+edit_point_num_LL = 1
+edit_point_num_FGSM = 1
+target_nums = [2]
 momentum = 0.9
-count = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+count = [0]
 
 batch_size = 1
 attack_method = "ITER"
@@ -34,7 +34,7 @@ save_pics = True
 use_cuda = True
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-model_url = './trained_models/VGG19_Retrained.pth'
+model_url = './trained_models/VGG19.pth'
 
 unnorm = UnNormalize(mean=(0.4914, 0.4822, 0.4465), std=(0.2023, 0.1994, 0.2010))
 # Transform
@@ -50,7 +50,7 @@ if dataset == 'CIFAR10':
     # test_loader = torch.utils.data.DataLoader(test_set, batch_size=1, shuffle=shuffle, num_workers=8)
 
     # 首次攻擊
-    train_path = "./Clean_CIFAR10_For_Adv/TrainSet/"
+    train_path = "./Samples"
     trainset = torchvision.datasets.ImageFolder(train_path, transform=transform_train)
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=False, num_workers=8,
                                                pin_memory=True)

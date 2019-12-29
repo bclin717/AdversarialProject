@@ -50,7 +50,7 @@ class DIF(Attack):
             c = (b > images + self.eps).float() * (images + self.eps) + (images + self.eps >= b).float() * b
             images = torch.clamp(c, max=1).detach()
 
-        for i in range(2):
+        for i in range(self.iters):
             images.requires_grad = True
             outputs = self.model(images)
             cost = loss(outputs, labels).to(self.device)
