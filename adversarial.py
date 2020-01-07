@@ -7,28 +7,35 @@ import torch.backends.cudnn as cudnn
 import torchvision
 from torch.autograd.gradcheck import zero_gradients
 from torchvision import transforms
-
+import argparse
 from models import *
 from utils import UnNormalize
 
+import numpy as np
+
 from torchattacks import *
+
+parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
+parser.add_argument('--t', default=0, type=int, help='target label')
+args = parser.parse_args()
+
 
 alpha_LL = 4
 alpha_FGSM = 6
 epsilons = 10
 iter_num_LL = 10
 iter_num_FGSM = 10
-edit_point_num_LL = 1
-edit_point_num_FGSM = 1
-target_nums = [2]
+edit_point_num_LL = 3
+edit_point_num_FGSM = 2
+target_nums = [args.t]
 momentum = 0.9
-count = [0]
+count = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 batch_size = 1
 attack_method = "ITER"
 dataset = "CIFAR10"
 shuffle = False
-save_pics = True
+save_pics = False
 
 # Set CUDA
 use_cuda = True
@@ -46,11 +53,12 @@ transform_train = transforms.Compose([
 # Dataloader
 if dataset == 'CIFAR10':
     # Test unseen
-    # test_set = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_train)
-    # test_loader = torch.utils.data.DataLoader(test_set, batch_size=1, shuffle=shuffle, num_workers=8)
+    test_set = torchvision.datasets.CIFAR10(root='./data', train=False, download=False, transform=transform_train)
+    test_loader = torch.utils.data.DataLoader(test_set, batch_size=1, shuffle=False, num_workers=8)
 
     # 首次攻擊
     train_path = "./Samples"
+    # train_path = "./Clean_CIFAR10_For_Adv/TrainSet"
     trainset = torchvision.datasets.ImageFolder(train_path, transform=transform_train)
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=batch_size, shuffle=False, num_workers=8,
                                                pin_memory=True)
@@ -85,17 +93,19 @@ def main():
     model.eval()
     # testing
     for target_num in target_nums:
-        test(model, device, train_loader, epsilons, target_num)
+        test(model, device, test_loader, epsilons, target_num)
 
 
 def test(model, device, test_loader, epsilon, target_num):
+    np.set_printoptions(suppress=True)
+    print(labels[target_num])
     tstart = time.time()
     # Accuracy counter
     correct = 0
     adv_success = 0
     incorrect = 0
     org_incorrect = 0
-
+    ambiguous = 0
     target_fake = torch.tensor([target_num]).to(device)
     target_fake.requires_grad = False
     count = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -108,6 +118,10 @@ def test(model, device, test_loader, epsilon, target_num):
         # Forward pass the data through the model
         output = model(data)
         init_pred = output.max(1, keepdim=True)[1]
+        # print(labels)
+        # print(labels[target.item()], " To ", labels[target_fake.item()])
+        pred_x = F.softmax(output, dim=1)
+        # print(pred_x.cpu().data.numpy())
 
         if init_pred.item() != target.item():
             org_incorrect += 1
@@ -127,7 +141,6 @@ def test(model, device, test_loader, epsilon, target_num):
         image_tensor = data.data.clone()
 
         for i in range(0, iter_num_LL):
-            zero_gradients(data)
             output = model(data)
             pred = output.max(1, keepdim=True)[1]
             if pred == target_fake:
@@ -146,7 +159,6 @@ def test(model, device, test_loader, epsilon, target_num):
             data.data = sourceTargetingAttack_topK(data, data_grad, image_tensor, topk_index, epsilon)
 
         for i in range(0, iter_num_FGSM):
-            zero_gradients(data)
             output = model(data)
             pred = output.max(1, keepdim=True)[1]
             if pred == target_fake:
@@ -168,6 +180,25 @@ def test(model, device, test_loader, epsilon, target_num):
         # Check for success
         output = model(data)
         final_pred = output.max(1, keepdim=True)[1]  # get the index of the max log-probability
+
+        pred_x = F.softmax(output, dim=1)
+        pred_x = pred_x.cpu().data.numpy()
+        # print("Final Pred:", labels[final_pred.item()])
+        # print(pred_x)
+        # print("")
+
+        flag = True
+        for i in range(0, 10):
+            if(pred_x[0][i] > 0.60):
+                flag = False
+                break
+        if flag:
+            ambiguous += 1
+            # print(step, ":  ", ambiguous)
+
+
+
+
         if final_pred.item() == target.item():
             correct += 1
         elif final_pred.item() == target_fake.item():
@@ -192,6 +223,7 @@ def test(model, device, test_loader, epsilon, target_num):
     tend = time.time()
 
     print(count)
+    print("Ambiguos:" ,ambiguous)
     print("Number of samples: {}".format(allnum))
     print("Target: {}".format(labels[target_num]))
     print("Test Accuracy = {} / {} = {:.2%}".format(correct, allnum, final_acc))

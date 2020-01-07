@@ -39,6 +39,9 @@ class IterLL(Attack):
         for i in range(self.iters):
             images.requires_grad = True
             outputs = self.model(images)
+            pred = outputs.max(1, keepdim=True)[1]
+            if pred.item() == labels.item():
+                break
             cost = loss(outputs, labels).to(self.device)
 
             grad = torch.autograd.grad(cost, images,

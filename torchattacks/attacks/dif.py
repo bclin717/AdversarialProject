@@ -5,18 +5,6 @@ from ..attack import Attack
 
 
 class DIF(Attack):
-    """
-    iterative least-likely class attack in the paper 'Adversarial Examples in the Physical World'
-    [https://arxiv.org/abs/1607.02533]
-
-    Arguments:
-        model (nn.Module): a model to attack.
-        eps (float): epsilon in the paper. (DEFALUT : 4/255)
-        alpha (float): alpha in the paper. (DEFALUT : 1/255)
-        iters (int): max iterations. (DEFALUT : 0)
-
-    .. note:: With 0 iters, iters will be automatically decided with the formula in the paper.
-    """
 
     def __init__(self, model, eps=4 / 255, alpha=1 / 255, iters=0, target=0):
         super(DIF, self).__init__("DIF", model)
